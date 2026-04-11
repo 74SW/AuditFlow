@@ -36,8 +36,7 @@ V['dashboard']=()=>{
       <td><div style="display:flex;gap:2px">${avs}</div></td>
       <td>${stat}</td>
       <td style="font-size:11px;color:var(--text-2)">${ap.step !== undefined && ap.step !== null ? STEPS[Math.min(ap.step,STEPS.length-1)].s : (ap.statut==='Planifié'?'—':'En cours')}</td>
-      <td><div class="pbar" style="width:80px"><div class="pfill" style="width:${pct}%"></div></div>
-      <div style="font-size:10px;color:var(--text-3)">${pct}%</div></td>
+      <td><div style="display:flex;align-items:center;gap:6px"><div class="pbar" style="width:70px"><div class="pfill" style="width:${pct}%"></div></div><span style="font-size:10px;color:var(--text-3);white-space:nowrap">${pct}%</span></div></td>
       </tr>`;
   }).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:1rem">Aucun audit planifié en '+CY+'</td></tr>';
 
