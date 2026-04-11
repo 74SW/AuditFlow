@@ -1022,26 +1022,28 @@ function buildTargetList(targets){
 }
 
 function buildDocList(docs){
-  if(!docs||!docs.length)return'';
-  return docs.map(function(f,fi){
-    var nameLink = f.url
-      ? '<a href="'+f.url+'" target="_blank" rel="noopener" style="color:var(--purple-dk);text-decoration:none;font-weight:500">'+f.name+'</a>'
-      : '<span style="font-weight:500">'+f.name+'</span>';
-    var meta = '';
-    if(f.uploadedBy) meta += f.uploadedBy;
-    if(f.uploadedAt) meta += ' · ' + new Date(f.uploadedAt).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-    if(f.step !== undefined) meta += ' · Étape '+(f.step+1)+' — '+STEPS[f.step].s;
-    return '<div style="background:var(--bg);border-radius:var(--radius);padding:8px 10px;margin-bottom:6px;border:.5px solid var(--border)">'
-      +'<div style="display:flex;align-items:center;gap:7px;margin-bottom:'+(meta?'4px':'0')+'">'
-      +'<span style="color:var(--purple)">&#9646;</span>'
-      +'<span style="flex:1;font-size:12px">'+nameLink+'</span>'
-      +'<span style="font-size:10px;color:var(--text-3);flex-shrink:0">'+f.size+'</span>'
-      +'<button class="bs" style="font-size:10px;padding:2px 7px;flex-shrink:0" onclick="renameDoc('+fi+')">Renommer</button>'
-      +'<button class="bs" style="font-size:10px;padding:2px 7px;flex-shrink:0" onclick="replaceDoc('+fi+')">Remplacer</button>'
-      +'<button class="bd" style="font-size:10px;padding:2px 7px;flex-shrink:0" onclick="deleteDoc(CA,&quot;'+f.path+'&quot;,&quot;'+f.name+'&quot;)">Supprimer</button>'
-      +'</div>'
-      +(meta ? '<div style="font-size:10px;color:var(--text-3);padding-left:18px">'+meta+'</div>' : '')
-      +'</div>';
+  if(!docs||!docs.length) return '';
+  return docs.map(function(f, fi){
+    var link = f.url
+      ? '<a href="' + f.url + '" target="_blank" rel="noopener" style="color:#534AB7;text-decoration:none;font-weight:500">' + f.name + '</a>'
+      : '<span style="font-weight:500">' + f.name + '</span>';
+    var meta = [];
+    if(f.uploadedBy) meta.push(f.uploadedBy);
+    if(f.uploadedAt) meta.push(new Date(f.uploadedAt).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}));
+    if(f.step !== undefined && f.step !== null && STEPS[f.step]) meta.push('Etape '+(f.step+1)+' — '+STEPS[f.step].s);
+    var metaHtml = meta.length ? '<div style="font-size:10px;color:#888;padding-left:18px;margin-top:2px">' + meta.join(' · ') + '</div>' : '';
+    var delFn = "deleteDoc(CA,'" + (f.path||'').replace(/'/g,"\'") + "','" + (f.name||'').replace(/'/g,"\'") + "')";
+    return '<div style="background:#f8f8f8;border-radius:6px;padding:8px 10px;margin-bottom:6px;border:.5px solid #e0e0e0">'
+      + '<div style="display:flex;align-items:center;gap:6px">'
+      + '<span style="color:#534AB7">&#9646;</span>'
+      + '<span style="flex:1;font-size:12px">' + link + '</span>'
+      + '<span style="font-size:10px;color:#aaa;flex-shrink:0">' + (f.size||'') + '</span>'
+      + '<button class="bs" style="font-size:10px;padding:2px 7px" onclick="renameDoc(' + fi + ')">Renommer</button>'
+      + '<button class="bs" style="font-size:10px;padding:2px 7px" onclick="replaceDoc(' + fi + ')">Remplacer</button>'
+      + '<button class="bd" style="font-size:10px;padding:2px 7px" onclick="' + delFn + '">Supprimer</button>'
+      + '</div>'
+      + metaHtml
+      + '</div>';
   }).join('');
 }
 
