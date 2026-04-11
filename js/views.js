@@ -69,6 +69,12 @@ function renderPlanAuditTable(){
   var ft=document.getElementById('f-pa-type')?document.getElementById('f-pa-type').value:'all';
   var fy=document.getElementById('f-pa-year')?document.getElementById('f-pa-year').value:'all';
   var rows=AUDIT_PLAN.filter(function(a){return(ft==='all'||a.type===ft)&&(fy==='all'||String(a.annee)===fy);});
+  // Tri par mois de début (audits sans date à la fin)
+  rows=rows.slice().sort(function(a,b){
+    var sa=a.dateDebut?parseInt(a.dateDebut):99;
+    var sb=b.dateDebut?parseInt(b.dateDebut):99;
+    return sa-sb;
+  });
   var h=`<thead><tr><th>Type</th><th>Titre</th><th>Detail</th><th>Annee</th><th>Auditeurs</th><th>Statut</th>${CU&&CU.role==='admin'?'<th>Actions</th>':''}</tr></thead><tbody>`;
   if(!rows.length){
     h+='<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:1.5rem">Aucun audit planifie.</td></tr>';
@@ -883,6 +889,12 @@ function renderGantt(){
   var ft=document.getElementById('f-pl')?document.getElementById('f-pl').value:'all';
   var fy=document.getElementById('f-pyr')?document.getElementById('f-pyr').value:'all';
   var rows=AUDIT_PLAN.filter(function(a){return(ft==='all'||a.type===ft)&&(fy==='all'||String(a.annee)===fy);});
+  // Tri par mois de début (audits sans date à la fin)
+  rows=rows.slice().sort(function(a,b){
+    var sa=a.dateDebut?parseInt(a.dateDebut):99;
+    var sb=b.dateDebut?parseInt(b.dateDebut):99;
+    return sa-sb;
+  });
   var curMonth=new Date().getMonth();
   var months=MO.map(function(m,mi){
     return '<div class="gc'+(mi===curMonth?' today-col':'')+'" style="font-size:11px;text-align:center;padding:4px 0;'+(mi===curMonth?'background:rgba(83,74,183,0.08);font-weight:600':'')+'">'+m+'</div>';
