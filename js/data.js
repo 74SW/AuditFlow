@@ -3,7 +3,7 @@ const STEPS=[
   {s:'Scope & Preparation',ph:1},{s:'Work Program',ph:1},{s:'Audit Kick Off',ph:1},
   {s:'Interviews / Process Review',ph:2},{s:'Flowcharts/Testing Strategy',ph:2},{s:'Testings',ph:2},
   {s:'Report',ph:3},{s:'Report Restitution',ph:3},{s:'Management Responses',ph:3},
-  {s:'Exec. Committee Report',ph:3},{s:'Audit Committee Report',ph:3}
+  {s:'Exec. Committee Report',ph:3}
 ];
 const PRCT={'Préparation':10,'Exécution':50,'Revue':80,'Clôturé':100,'Planifié':0,'Restitution':90};
 const BMAP={'Préparation':'bp2','Exécution':'be','Revue':'br2','Clôturé':'bdn','Planifié':'bpl','Restitution':'br2','En retard':'blt','En cours':'be','Non démarré':'bpl'};
