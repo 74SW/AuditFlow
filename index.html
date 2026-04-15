@@ -155,7 +155,10 @@
 // ── SSO Microsoft (Azure Static Web Apps + Entra ID) ──────────────
 function ssoLogin(){
   // Redirige vers le endpoint Azure SWA auth
-  window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.href);
+  // Toujours rediriger vers Azure SWA pour le SSO, quelle que soit l'origine
+  var swaBase = 'https://white-moss-0f615d11e.7.azurestaticapps.net';
+  var redirectAfter = encodeURIComponent(swaBase + '/');
+  window.location.href = swaBase + '/.auth/login/aad?post_login_redirect_uri=' + redirectAfter;
 }
 
 // Au chargement : vérifier si l'utilisateur est déjà authentifié via SSO
