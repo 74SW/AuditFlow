@@ -24,6 +24,332 @@ function riskLabel(key){
   return r?'<span class="badge '+r.badge+'">'+r.label+'</span>':'<span class="badge bpl">—</span>';
 }
 
+// ══════════════════════════════════════════════════════════════
+//  MATRICE RISQUES — Helpers
+// ══════════════════════════════════════════════════════════════
+var RISK_LABELS_PxI={
+  1:{label:'Faible',   color:'#059669',bg:'#ECFDF5',badge:'bdn'},
+  2:{label:'Modéré',   color:'#B45309',bg:'#FFFBEB',badge:'bp2'},
+  3:{label:'Élevé',    color:'#DC2626',bg:'#FEF2F2',badge:'blt'},
+  4:{label:'Critique', color:'#7F1D1D',bg:'#FEE2E2',badge:'bhi'},
+};
+
+function riskScore(p,i){return Math.ceil(p*i/4);}
+// Score 1-16 → criticité 1-4
+function riskCrit(p,i){var s=p*i;if(s<=4)return 1;if(s<=8)return 2;if(s<=12)return 3;return 4;}
+function riskCritLabel(p,i){return RISK_LABELS_PxI[riskCrit(p,i)];}
+
+function riskBadge(p,i){
+  var rl=riskCritLabel(p,i);
+  return '<span class="badge" style="background:'+rl.bg+';color:'+rl.color+'">'+rl.label+' ('+p+'×'+i+'='+p*i+')</span>';
+}
+
+// Récupérer les risques d'un processus depuis PROCESSES
+function getProcRisks(procId){
+  var p=PROCESSES.find(function(x){return x.id===procId;});
+  return(p&&p.risks)||[];
+}
+
+// ── Modale risques d'un processus ────────────────────────────────────────────
+function showProcRisksModal(procId){
+  var proc=PROCESSES.find(function(p){return p.id===procId;});
+  if(!proc){toast('Processus introuvable');return;}
+  var risks=proc.risks||[];
+
+  function buildRiskRows(){
+    if(!risks.length) return '<div style="font-size:12px;color:var(--text-3);padding:.5rem 0">Aucun risque défini.</div>';
+    return risks.map(function(r,ri){
+      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">'
+        +'<div style="flex:1;font-size:12px;font-weight:500;">'+r.label+'</div>'
+        +riskBadge(r.probability,r.impact)
+        +(CU&&CU.role==='admin'?'<button class="bd" style="font-size:10px;padding:2px 6px" onclick="removeProcRisk(\''+procId+'\','+ri+')">×</button>':'')
+        +'</div>';
+    }).join('');
+  }
+
+  function buildModal(){
+    var body='<div style="margin-bottom:1rem"><div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:.5rem">Risques du processus : <strong>'+proc.proc+'</strong></div>'
+      +'<div id="proc-risk-list">'+buildRiskRows()+'</div></div>'
+      +(CU&&CU.role==='admin'
+        ?'<div style="border-top:1px solid var(--border);padding-top:.875rem;margin-top:.5rem">'
+          +'<div style="font-size:12px;font-weight:600;margin-bottom:.625rem">Ajouter un risque</div>'
+          +'<div><label>Description du risque <span style="color:var(--red)">*</span></label>'
+          +'<input id="nr-label" placeholder="ex : Fraude fournisseur, Erreur de rapprochement..."/></div>'
+          +'<div class="g2">'
+          +'<div><label>Probabilité (1-4)</label>'
+          +'<select id="nr-prob"><option value="1">1 — Rare</option><option value="2">2 — Peu probable</option><option value="3">3 — Probable</option><option value="4">4 — Quasi-certain</option></select></div>'
+          +'<div><label>Impact (1-4)</label>'
+          +'<select id="nr-imp"><option value="1">1 — Mineur</option><option value="2">2 — Modéré</option><option value="3">3 — Majeur</option><option value="4">4 — Critique</option></select></div>'
+          +'</div>'
+          +'<button class="bp" style="width:100%;margin-top:8px" onclick="addProcRisk(\''+procId+'\')">+ Ajouter ce risque</button>'
+          +'</div>'
+        :'');
+    return body;
+  }
+
+  openModal('Risques — '+proc.proc, buildModal(), function(){});
+  // Masquer le bouton Confirmer (on confirme via le bouton Ajouter)
+  setTimeout(function(){var mok=document.getElementById('mok');if(mok)mok.style.display='none';},50);
+}
+
+async function addProcRisk(procId){
+  var label=document.getElementById('nr-label').value.trim();
+  if(!label){toast('Description obligatoire');return;}
+  var prob=parseInt(document.getElementById('nr-prob').value)||1;
+  var imp=parseInt(document.getElementById('nr-imp').value)||1;
+  var proc=PROCESSES.find(function(p){return p.id===procId;});
+  if(!proc){toast('Processus introuvable');return;}
+  if(!proc.risks)proc.risks=[];
+  proc.risks.push({id:'r'+Date.now(),label:label,probability:prob,impact:imp});
+  // Sauvegarder en base
+  await sbUpsert('af_processes',{
+    id:proc.id,organization_id:CU.organization_id,
+    dom:proc.dom,proc:proc.proc,
+    risk:proc.risk,risk_level:proc.riskLevel||'faible',
+    archived:proc.archived||false,
+    risks:proc.risks
+  });
+  document.getElementById('nr-label').value='';
+  document.getElementById('proc-risk-list').innerHTML=(function(){
+    var risks=proc.risks;
+    if(!risks.length) return '<div style="font-size:12px;color:var(--text-3);padding:.5rem 0">Aucun risque défini.</div>';
+    return risks.map(function(r,ri){
+      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">'
+        +'<div style="flex:1;font-size:12px;font-weight:500;">'+r.label+'</div>'
+        +riskBadge(r.probability,r.impact)
+        +'<button class="bd" style="font-size:10px;padding:2px 6px" onclick="removeProcRisk(\''+procId+'\','+ri+')">×</button>'
+        +'</div>';
+    }).join('');
+  })();
+  toast('Risque ajouté ✓');
+}
+
+async function removeProcRisk(procId,ri){
+  var proc=PROCESSES.find(function(p){return p.id===procId;});
+  if(!proc||!proc.risks)return;
+  proc.risks.splice(ri,1);
+  await sbUpsert('af_processes',{
+    id:proc.id,organization_id:CU.organization_id,
+    dom:proc.dom,proc:proc.proc,
+    risk:proc.risk,risk_level:proc.riskLevel||'faible',
+    archived:proc.archived||false,
+    risks:proc.risks
+  });
+  // Rafraîchir la liste dans la modale
+  document.getElementById('proc-risk-list').innerHTML=(function(){
+    var risks=proc.risks;
+    if(!risks.length) return '<div style="font-size:12px;color:var(--text-3);padding:.5rem 0">Aucun risque défini.</div>';
+    return risks.map(function(r,ri2){
+      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">'
+        +'<div style="flex:1;font-size:12px;font-weight:500;">'+r.label+'</div>'
+        +riskBadge(r.probability,r.impact)
+        +'<button class="bd" style="font-size:10px;padding:2px 6px" onclick="removeProcRisk(\''+procId+'\','+ri2+')">×</button>'
+        +'</div>';
+    }).join('');
+  })();
+  toast('Risque supprimé ✓');
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MATRICE RISQUES — Step 5
+// ══════════════════════════════════════════════════════════════
+function renderRiskMatrix(){
+  var ap=AUDIT_PLAN.find(function(a){return a.id===CA;});
+  var d=getAudData(CA);
+  if(!d.riskLinks)d.riskLinks={};  // {riskId: [controlId, ...]}
+  if(!d.auditRisks)d.auditRisks=[]; // risques spécifiques à cet audit
+
+  // Risques du processus associé (prédéfinis)
+  var procRisks=ap&&ap.processId?getProcRisks(ap.processId):[];
+
+  // Fusionner risques prédéfinis + risques audit
+  var allRisks=[...procRisks,...(d.auditRisks||[])];
+
+  // Contrôles disponibles (step 4 = index 4)
+  var allControls=d.controls[4]||[];
+
+  // Calculer le statut de couverture pour chaque risque
+  function getRiskStatus(riskId){
+    var linkedCtrlIds=d.riskLinks[riskId]||[];
+    if(!linkedCtrlIds.length) return {status:'uncovered',label:'Non couvert',color:'#DC2626',bg:'#FEF2F2'};
+    var linkedCtrls=allControls.filter(function(c){return linkedCtrlIds.includes(c.name);});
+    var allPass=linkedCtrls.filter(function(c){return c.finalized&&c.result==='pass';});
+    var anyFail=linkedCtrls.some(function(c){return c.finalized&&c.result==='fail';});
+    var anyTarget=linkedCtrls.some(function(c){return c.design==='target';});
+    if(anyFail||anyTarget) return {status:'residual',label:'Risque résiduel',color:'#B45309',bg:'#FFFBEB'};
+    if(allPass.length>0) return {status:'covered',label:'Couvert',color:'#059669',bg:'#ECFDF5'};
+    return {status:'partial',label:'En cours',color:'#2563EB',bg:'#EFF6FF'};
+  }
+
+  // Stats
+  var covered=allRisks.filter(function(r){return getRiskStatus(r.id).status==='covered';}).length;
+  var residual=allRisks.filter(function(r){return getRiskStatus(r.id).status==='residual';}).length;
+  var uncovered=allRisks.filter(function(r){return getRiskStatus(r.id).status==='uncovered';}).length;
+
+  // Construire le HTML
+  var html='<div class="card">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">';
+  html+='<div style="font-size:13px;font-weight:600">Matrice de couverture des risques</div>';
+  html+='<button class="bs" style="font-size:11px" onclick="showAddAuditRiskModal()">+ Risque ad hoc</button>';
+  html+='</div>';
+
+  // KPIs
+  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1rem">';
+  html+='<div class="card" style="background:#ECFDF5;text-align:center;padding:.625rem"><div style="font-size:10px;color:var(--text-3)">Couverts</div><div style="font-size:20px;font-weight:700;color:#059669">'+covered+'</div></div>';
+  html+='<div class="card" style="background:#FFFBEB;text-align:center;padding:.625rem"><div style="font-size:10px;color:var(--text-3)">Résiduel</div><div style="font-size:20px;font-weight:700;color:#B45309">'+residual+'</div></div>';
+  html+='<div class="card" style="background:#FEF2F2;text-align:center;padding:.625rem"><div style="font-size:10px;color:var(--text-3)">Non couverts</div><div style="font-size:20px;font-weight:700;color:#DC2626">'+uncovered+'</div></div>';
+  html+='</div>';
+
+  if(!allRisks.length){
+    html+='<div style="font-size:12px;color:var(--text-3);padding:.5rem">';
+    html+='Aucun risque défini.'+(ap&&ap.processId?' Ajoutez des risques dans <strong>Audit Universe</strong> sur ce processus, ou ajoutez un risque ad hoc ci-dessus.':' Ajoutez des risques ad hoc ou associez un processus à cet audit.');
+    html+='</div>';
+    html+='</div>';
+    return html;
+  }
+
+  // Tableau risques
+  html+='<div class="tw"><table>';
+  html+='<thead><tr><th>Risque</th><th>P</th><th>I</th><th>Score</th><th>Criticité</th><th>Contrôles associés</th><th>Statut couverture</th><th></th></tr></thead><tbody>';
+
+  allRisks.forEach(function(r){
+    var status=getRiskStatus(r.id);
+    var linkedIds=d.riskLinks[r.id]||[];
+    var linkedCtrls=allControls.filter(function(c){return linkedIds.includes(c.name);});
+    var ctrlBadges=linkedCtrls.map(function(c){
+      var res=c.finalized?(c.result==='pass'?'<span style="color:#059669">✓</span>':'<span style="color:#DC2626">✗</span>'):'';
+      return '<span class="badge bpl" style="font-size:9px;margin-right:2px">'+c.name+res+'</span>';
+    }).join('');
+    var isAuditRisk=(d.auditRisks||[]).some(function(x){return x.id===r.id;});
+
+    html+='<tr>';
+    html+='<td style="font-weight:500;font-size:11px">'+r.label+(isAuditRisk?'<span class="badge bpc" style="font-size:8px;margin-left:4px">Ad hoc</span>':'')+'</td>';
+    html+='<td style="text-align:center;font-weight:600">'+r.probability+'</td>';
+    html+='<td style="text-align:center;font-weight:600">'+r.impact+'</td>';
+    html+='<td style="text-align:center;font-weight:700;font-size:13px">'+r.probability*r.impact+'</td>';
+    html+='<td>'+riskBadge(r.probability,r.impact)+'</td>';
+    html+='<td style="max-width:200px">'+( ctrlBadges||'<span style="color:var(--text-3);font-size:10px">—</span>')+'</td>';
+    html+='<td><span class="badge" style="background:'+status.bg+';color:'+status.color+'">'+status.label+'</span></td>';
+    html+='<td style="white-space:nowrap">';
+    html+='<button class="bs" style="font-size:9px;padding:2px 6px" onclick="showLinkControlModal(\''+r.id+'\')">Lier contrôle</button>';
+    if(isAuditRisk) html+=' <button class="bd" style="font-size:9px;padding:2px 6px" onclick="removeAuditRisk(\''+r.id+'\')">×</button>';
+    html+='</td>';
+    html+='</tr>';
+  });
+
+  html+='</tbody></table></div>';
+
+  // Heatmap 4x4
+  html+='<div style="margin-top:1.25rem">';
+  html+='<div style="font-size:12px;font-weight:600;margin-bottom:.625rem">Heat Map P×I</div>';
+  html+=buildHeatmap(allRisks,d.riskLinks);
+  html+='</div>';
+  html+='</div>';
+  return html;
+}
+
+function buildHeatmap(risks){
+  var COLORS=[
+    ['#ECFDF5','#ECFDF5','#FFFBEB','#FEF2F2'],
+    ['#ECFDF5','#FFFBEB','#FEF2F2','#FEF2F2'],
+    ['#FFFBEB','#FEF2F2','#FEF2F2','#FEE2E2'],
+    ['#FEF2F2','#FEF2F2','#FEE2E2','#FEE2E2'],
+  ];
+  var h='<div style="display:inline-block">';
+  h+='<div style="display:flex;align-items:center;margin-bottom:2px">';
+  h+='<div style="width:60px;font-size:9px;color:var(--text-3);text-align:right;padding-right:4px">Impact →</div>';
+  for(var i=1;i<=4;i++) h+='<div style="width:64px;text-align:center;font-size:10px;font-weight:600;color:var(--text-2)">I='+i+'</div>';
+  h+='</div>';
+  for(var p=4;p>=1;p--){
+    h+='<div style="display:flex;align-items:center;margin-bottom:2px">';
+    h+='<div style="width:60px;font-size:10px;font-weight:600;color:var(--text-2);text-align:right;padding-right:4px">P='+p+'</div>';
+    for(var im=1;im<=4;im++){
+      var cellRisks=risks.filter(function(r){return r.probability===p&&r.impact===im;});
+      var bg=COLORS[4-p][im-1];
+      h+='<div style="width:64px;height:52px;background:'+bg+';border:1px solid rgba(0,0,0,.06);border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:9px;text-align:center;padding:2px">';
+      h+='<div style="font-size:10px;font-weight:700;color:rgba(0,0,0,.3)">'+p*im+'</div>';
+      if(cellRisks.length){
+        cellRisks.slice(0,2).forEach(function(r){
+          var lbl=r.label.length>12?r.label.slice(0,10)+'…':r.label;
+          h+='<div style="font-size:8px;font-weight:500;color:#111;line-height:1.1;text-align:center">'+lbl+'</div>';
+        });
+        if(cellRisks.length>2) h+='<div style="font-size:8px;color:var(--text-3)">+'+( cellRisks.length-2)+'</div>';
+      }
+      h+='</div>';
+    }
+    h+='</div>';
+  }
+  h+='<div style="font-size:9px;color:var(--text-3);margin-top:4px;padding-left:60px">Probabilité ↑</div>';
+  h+='</div>';
+  return h;
+}
+
+function showAddAuditRiskModal(){
+  openModal('Ajouter un risque ad hoc',
+    '<div><label>Description du risque <span style="color:var(--red)">*</span></label>'
+    +'<input id="ar-label" placeholder="ex : Accès non autorisé au SI..."/></div>'
+    +'<div class="g2">'
+    +'<div><label>Probabilité (1-4)</label>'
+    +'<select id="ar-prob"><option value="1">1 — Rare</option><option value="2">2 — Peu probable</option><option value="3">3 — Probable</option><option value="4">4 — Quasi-certain</option></select></div>'
+    +'<div><label>Impact (1-4)</label>'
+    +'<select id="ar-imp"><option value="1">1 — Mineur</option><option value="2">2 — Modéré</option><option value="3">3 — Majeur</option><option value="4">4 — Critique</option></select></div>'
+    +'</div>',
+    async function(){
+      var label=document.getElementById('ar-label').value.trim();
+      if(!label){toast('Description obligatoire');return;}
+      var prob=parseInt(document.getElementById('ar-prob').value)||1;
+      var imp=parseInt(document.getElementById('ar-imp').value)||1;
+      var d=getAudData(CA);
+      if(!d.auditRisks)d.auditRisks=[];
+      d.auditRisks.push({id:'ar'+Date.now(),label:label,probability:prob,impact:imp});
+      await saveAuditData(CA);
+      document.getElementById('det-content').innerHTML=renderDetContent();
+      toast('Risque ajouté ✓');
+    });
+}
+
+async function removeAuditRisk(riskId){
+  var d=getAudData(CA);
+  d.auditRisks=(d.auditRisks||[]).filter(function(r){return r.id!==riskId;});
+  if(d.riskLinks&&d.riskLinks[riskId]) delete d.riskLinks[riskId];
+  await saveAuditData(CA);
+  document.getElementById('det-content').innerHTML=renderDetContent();
+  toast('Risque supprimé ✓');
+}
+
+function showLinkControlModal(riskId){
+  var d=getAudData(CA);
+  var allControls=d.controls[4]||[];
+  var linkedIds=d.riskLinks[riskId]||[];
+  if(!allControls.length){toast('Aucun contrôle disponible — documentez d\'abord les contrôles en step 4');return;}
+
+  var checks=allControls.map(function(c,ci){
+    var checked=linkedIds.includes(c.name);
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">'
+      +'<input type="checkbox" id="rl-c'+ci+'" value="'+_escQ(c.name)+'" '+(checked?'checked':'')+'/>'
+      +'<label for="rl-c'+ci+'" style="font-size:12px;cursor:pointer;flex:1">'+c.name+'</label>'
+      +'<span class="badge '+(c.design==='existing'?'bdn':'btg')+'" style="font-size:9px">'+(c.design==='existing'?'Existing':'Target')+'</span>'
+      +(c.finalized?'<span class="badge '+(c.result==='pass'?'bdn':'blt')+'" style="font-size:9px">'+(c.result==='pass'?'Pass':'Fail')+'</span>':'')
+      +'</div>';
+  }).join('');
+
+  openModal('Lier des contrôles à ce risque',
+    '<div style="font-size:11px;color:var(--text-2);margin-bottom:.75rem">Sélectionnez les contrôles qui couvrent ce risque :</div>'+checks,
+    async function(){
+      var selected=[];
+      allControls.forEach(function(c,ci){
+        var cb=document.getElementById('rl-c'+ci);
+        if(cb&&cb.checked) selected.push(c.name);
+      });
+      if(!d.riskLinks)d.riskLinks={};
+      d.riskLinks[riskId]=selected;
+      await saveAuditData(CA);
+      document.getElementById('det-content').innerHTML=renderDetContent();
+      toast(selected.length+' contrôle(s) associé(s) ✓');
+    });
+}
+
+
 function calculateAuditProgress(ap){
   if(!ap) return 0;
   if(ap.statut==='Clôturé') return 100;
@@ -315,7 +641,7 @@ function renderProcTable(){
     +'<th style="width:160px">Domaine</th>'
     +'<th>Processus</th>'
     +'<th style="width:120px">Niveau de risque</th>'
-    +(CU&&CU.role==='admin'?'<th style="width:120px">Actions</th>':'')
+    +'<th style="width:180px">'+(CU&&CU.role==='admin'?'Actions':'Risques')+'</th>'
     +'</tr></thead><tbody>';
 
   if(!doms.length){
@@ -345,12 +671,15 @@ function renderProcTable(){
         } else {
           riskCell=riskLabel(p.riskLevel||'faible');
         }
+        var riskCount=(p.risks||[]).length;
+        var riskCountBadge=riskCount?'<span class="badge bpc" style="font-size:9px;margin-left:4px">'+riskCount+' risque'+(riskCount>1?'s':'')+'</span>':'';
         var adminCell=CU&&CU.role==='admin'
           ?'<td style="white-space:nowrap">'
+            +'<button class="bs" style="font-size:10px;padding:2px 7px" onclick="showProcRisksModal(\''+p.id+'\')">⚠ Risques'+riskCountBadge+'</button> '
             +'<button class="bs" style="font-size:10px;padding:2px 7px" onclick="showEditProcModal('+idx+')">Modifier</button> '
             +'<button class="bd" style="font-size:10px;padding:2px 7px" onclick="archiveProc('+idx+')">Archiver</button>'
             +'</td>'
-          :'';
+          :'<td><button class="bs" style="font-size:10px;padding:2px 7px" onclick="showProcRisksModal(\''+p.id+'\')">⚠ Risques'+riskCountBadge+'</button></td>';
         h+='<tr>';
         h+='<td style="font-size:11px;color:var(--text-2)">'+dom+'</td>';
         h+='<td style="font-weight:500;font-size:12px">'+p.proc+'</td>';
@@ -1343,8 +1672,8 @@ V['audit-detail']=()=>{
 };
 I['audit-detail']=()=>{};
 
-function getStepTabs(){if(CS===4)return['roles','tasks','controls','docs','notes'];if(CS===5)return['roles','tasks','controls-exec','findings-exec','docs','notes'];if(CS===6)return['roles','tasks','findings','maturity','docs','notes'];if(CS===8)return['roles','tasks','mgt-resp','docs','notes'];return['roles','tasks','docs','notes'];}
-const TLBL={'roles':'Rôles','tasks':'Tâches','controls':'Contrôles','controls-exec':'Contrôles & Tests','findings-exec':'Findings (tests)','findings':'Findings','maturity':'Overall Maturity','mgt-resp':'Mgt Response','docs':'Documents','notes':'Notes'};
+function getStepTabs(){if(CS===4)return['roles','tasks','controls','docs','notes'];if(CS===5)return['roles','tasks','controls-exec','risk-matrix','findings-exec','docs','notes'];if(CS===6)return['roles','tasks','findings','maturity','docs','notes'];if(CS===8)return['roles','tasks','mgt-resp','docs','notes'];return['roles','tasks','docs','notes'];}
+const TLBL={'roles':'Rôles','tasks':'Tâches','controls':'Contrôles','controls-exec':'Contrôles & Tests','risk-matrix':'Matrice Risques','findings-exec':'Findings (tests)','findings':'Findings','maturity':'Overall Maturity','mgt-resp':'Mgt Response','docs':'Documents','notes':'Notes'};
 function renderDetTabs(){return getStepTabs().map(t=>`<div class="tab ${CT===t?'active':''}" onclick="switchDetTab('${t}')">${TLBL[t]}</div>`).join('');}
 function renderStepper(){
   const phases=[[0,1,2],[3,4,5],[6,7,8,9]];
@@ -1361,6 +1690,7 @@ function renderDetContent(){
   if(CT==='tasks'){const done=stepTasks.filter(t=>t.done).length;return`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem"><div style="font-size:13px;font-weight:600">Tâches — ${s.s}</div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--text-2)">${done}/${stepTasks.length}</span><button class="bs" style="font-size:11px" onclick="showNewTaskModal()">+ Ajouter</button></div></div><div id="task-list">${renderTaskList(stepTasks,a)}</div></div>`;}
   if(CT==='controls'){const ctrls=d.controls[CS]||[];return`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem"><div style="font-size:13px;font-weight:600">Contrôles identifiés</div><button class="bs" style="font-size:11px" onclick="showAddControlModal()">+ Ajouter</button></div>${buildControlList(ctrls)}</div>`;}
   if(CT==='controls-exec'){const step5c=d.controls[4]||[];const keyExist=step5c.filter(c=>c.clef&&c.design==='existing');const targets=step5c.filter(c=>c.design==='target');return`<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:.875rem">Tests — Contrôles clefs existants</div>${keyExist.length?buildExecTable(keyExist):'<div style="font-size:12px;color:var(--text-3);padding:.5rem">Aucun contrôle clef existant.</div>'}<div style="font-size:13px;font-weight:600;margin:.875rem 0 .5rem">Contrôles Target — anomalies automatiques</div>${buildTargetList(targets)}</div>`;}
+  if(CT==='risk-matrix'){return renderRiskMatrix();}
   if(CT==='findings-exec'||CT==='findings'){const step5c=d.controls[4]||[];const step6c=(d.controls[4]||[]).filter(x=>x.clef&&x.design==='existing'&&x.finalized&&x.result==='fail');const failF=step6c.filter(c=>c.finding);const targetF=step5c.filter(c=>c.design==='target');const manualF=d.findings||[];return`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem"><div style="font-size:13px;font-weight:600">Findings</div><button class="bs" style="font-size:11px" onclick="showAddFindingModal()">+ Ajouter un finding</button></div>${failF.length?('<div style="font-size:11px;font-weight:500;color:var(--text-2);margin-bottom:.5rem">Contrôles - Fail</div>'+failF.map(ctrl=>'<div class="fr"><div class="fh"><span class="badge bfl">Fail</span><div class="ft">'+ctrl.name+'</div></div><div style="font-size:11px;color:var(--text-2)">'+ctrl.finding+'</div></div>').join('')):''}${targetF.length?('<div style="font-size:11px;font-weight:500;color:var(--text-2);margin:.75rem 0 .5rem">Contrôles non existants (Target)</div>'+targetF.map(ctrl=>'<div class="fr"><div class="fh"><span class="badge btg">Target</span><div class="ft">'+ctrl.name+'</div></div><div style="font-size:11px;color:var(--red)">Contrôle non existant.</div></div>').join('')):''}${manualF.length?('<div style="font-size:11px;font-weight:500;color:var(--text-2);margin:.75rem 0 .5rem">Findings additionnels</div>'+manualF.map((f,idx2)=>'<div class="fr"><div class="fh"><span class="badge bpc">Finding</span><div class="ft">'+f.title+'</div><button class="bd" style="font-size:10px;padding:2px 6px" onclick="removeManualFinding('+idx2+')">X</button></div><div style="font-size:11px;color:var(--text-2)">'+f.desc+'</div></div>').join('')):''}${!failF.length&&!targetF.length&&!manualF.length?'<div style="font-size:12px;color:var(--text-3)">Aucun finding pour le moment.</div>':''}</div>`;}
   if(CT==='maturity'){const d=getAudData(CA);if(!d.maturity)d.maturity={level:'',notes:'',saved:false};const MLEVELS=[{key:'unsatisfactory',label:'Unsatisfactory',color:'#A32D2D',bg:'#FCEBEB',def:'Contrôle interne insuffisant.',meas:'Plus de 70% des contrôles testés sont en Fail.'},{key:'major',label:'Major Improvements Needed',color:'#854F0B',bg:'#FAEEDA',def:'Le cadre de contrôle présente des lacunes importantes.',meas:'40 à 70% des contrôles testés en Fail.'},{key:'some',label:'Some Improvements Needed',color:'#1D6B45',bg:'#E1F5EE',def:'Des améliorations ponctuelles sont nécessaires.',meas:'10 à 40% des contrôles en Fail.'},{key:'effective',label:'Effective',color:'#3B6D11',bg:'#EAF3DE',def:'Le cadre de contrôle est solide et efficace.',meas:'Moins de 10% des contrôles en Fail.'}];const step6c=(d.controls[4]||[]).filter(x=>x.clef&&x.design==='existing'&&x.finalized);const failCount=step6c.filter(x=>x.result==='fail').length;const passCount=step6c.filter(x=>x.result==='pass').length;const targetCount=(d.controls[4]||[]).filter(x=>x.design==='target').length;const ratio=step6c.length?failCount/step6c.length:0;const suggestedKey=step6c.length===0?'':ratio>0.7?'unsatisfactory':ratio>0.4?'major':ratio>0.1?'some':'effective';const sugLabel=suggestedKey?MLEVELS.find(l=>l.key===suggestedKey):null;let html='<div class="card">';html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem"><div style="font-size:13px;font-weight:600">Overall Process Maturity</div>'+(d.maturity.saved?'<span class="tag-new">✓ Évaluation sauvegardée</span>':'')+'</div>';html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1rem"><div class="card" style="background:var(--bg);text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">Tests finalisés</div><div style="font-size:20px;font-weight:600">'+step6c.length+'</div></div><div class="card" style="background:var(--green-lt);text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">Pass</div><div style="font-size:20px;font-weight:600;color:var(--green)">'+passCount+'</div></div><div class="card" style="background:var(--red-lt);text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">Fail + Target</div><div style="font-size:20px;font-weight:600;color:var(--red)">'+(failCount+targetCount)+'</div></div></div>';if(sugLabel)html+='<div style="background:var(--purple-lt);border:.5px solid var(--purple);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--purple-dk);margin-bottom:1rem">Niveau suggéré : <strong>'+sugLabel.label+'</strong></div>';html+='<div style="font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:.625rem">Sélectionnez le niveau de maturité :</div><div style="display:flex;flex-direction:column;gap:8px;margin-bottom:1rem">';MLEVELS.forEach(l=>{const sel=d.maturity.level===l.key;html+='<div onclick="setMaturity(\''+l.key+'\')" style="border:2px solid '+(sel?l.color:'var(--border)')+';border-radius:var(--radius);padding:.875rem 1rem;cursor:pointer;background:'+(sel?l.bg:'var(--bg-card)')+';transition:all .15s"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><div style="width:14px;height:14px;border-radius:50%;border:2px solid '+l.color+';background:'+(sel?l.color:'transparent')+';flex-shrink:0"></div><div style="font-size:13px;font-weight:600;color:'+l.color+'">'+l.label+'</div></div><div style="padding-left:24px"><div style="font-size:11px;color:var(--text-2);margin-bottom:4px"><strong>Définition :</strong> '+l.def+'</div><div style="font-size:11px;color:var(--text-3)"><strong>Mesure :</strong> '+l.meas+'</div></div></div>';});html+='</div><div style="font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:.375rem">Commentaires</div><textarea id="maturity-notes" style="width:100%;min-height:80px;resize:vertical;font-size:12px" placeholder="Justifiez votre évaluation...">'+(d.maturity.notes||'')+'</textarea><div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="bp" onclick="saveMaturity()">Sauvegarder</button></div></div>';return html;}
   if(CT==='mgt-resp'){const step5c=d.controls[4]||[];const step6c=(d.controls[4]||[]).filter(x=>x.clef&&x.design==='existing'&&x.finalized&&x.result==='fail');const allFindings=[...step6c.filter(c=>c.finding).map(c=>({id:'f_'+c.name,title:c.name,desc:c.finding,type:'fail'})),...step5c.filter(c=>c.design==='target').map(c=>({id:'t_'+c.name,title:c.name,desc:'Contrôle non existant',type:'target'})),...(d.findings||[]).map((f,i)=>({id:'m_'+i,title:f.title,desc:f.desc,type:'manual'}))];if(!d.mgtResp)d.mgtResp=[];allFindings.forEach(f=>{if(!d.mgtResp.find(r=>r.findingId===f.id))d.mgtResp.push({findingId:f.id,action:'',owner:'',year:2026,quarter:'Q1',pushed:false});});return`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem"><div style="font-size:13px;font-weight:600">Management Responses</div><button class="bs" style="font-size:11px" onclick="pushAllMgtResp()">Envoyer vers Plans d'action →</button></div>${allFindings.length?allFindings.map((f,fi)=>{const resp=d.mgtResp.find(r=>r.findingId===f.id)||{};const tbadge={fail:'bfl',target:'btg',manual:'bpc'}[f.type];return`<div class="mr-row"><div class="mr-hdr"><span class="badge ${tbadge}">${f.type==='fail'?'Fail':f.type==='target'?'Target':'Finding'}</span><div class="mr-title">${f.title}</div>${resp.pushed?'<span class="tag-new">✓ Envoyé</span>':''}</div><div style="font-size:11px;color:var(--text-2);margin-bottom:.625rem">${f.desc}</div><div class="mr-fields"><div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:3px">Action</label><input style="font-size:11px" placeholder="Action corrective..." value="${resp.action||''}" onchange="setMgtResp('${f.id}','action',this.value)"/></div><div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:3px">Owner</label><input style="font-size:11px" placeholder="ex : Finance, IT..." value="${resp.owner||''}" onchange="setMgtResp('${f.id}','owner',this.value)"/></div><div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:3px">Deadline</label><div style="display:flex;gap:4px"><select style="font-size:11px" onchange="setMgtResp('${f.id}','year',parseInt(this.value))"><option ${resp.year===2025?'selected':''}>2025</option><option ${resp.year===2026?'selected':''} selected>2026</option><option ${resp.year===2027?'selected':''}>2027</option><option ${resp.year===2028?'selected':''}>2028</option></select><select style="font-size:11px" onchange="setMgtResp('${f.id}','quarter',this.value)"><option ${resp.quarter==='Q1'?'selected':''}>Q1</option><option ${resp.quarter==='Q2'?'selected':''}>Q2</option><option ${resp.quarter==='Q3'?'selected':''}>Q3</option><option ${resp.quarter==='Q4'?'selected':''}>Q4</option></select></div></div></div></div>`;}).join(''):'<div style="font-size:12px;color:var(--text-3)">Aucun finding identifié.</div>'}</div>`;}
