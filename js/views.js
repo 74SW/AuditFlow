@@ -217,9 +217,9 @@ I['dashboard']=function(){
         +'<span><strong>'+total+' élément'+(total>1?'s':'')+' en retard</strong> — '
         +(lateAudits.length?lateAudits.length+' audit'+(lateAudits.length>1?'s':''):'')
         +(lateAudits.length&&lateActs.length?' · ':'')
-        +(lateActs.length?lateActs.length+' plan'+(lateActs.length>1?'s':'')+' d'action':'')
+        +(lateActs.length?lateActs.length+' plan'+(lateActs.length>1?'s':'')+" d\'action":'')
         +' nécessitent votre attention.</span>'
-        +'<button onclick="document.getElementById('notif-bar').style.display='none'" '
+        +'<button onclick="document.getElementById(\'notif-bar\').style.display=\'none\'" '
         +'style="margin-left:auto;background:none;border:none;cursor:pointer;color:#fff;font-size:16px;padding:0 4px;">×</button>';
     } else {
       notifBar.style.display='none';
