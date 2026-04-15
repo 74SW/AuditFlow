@@ -1,3 +1,11 @@
+// Génère un UUID v4 compatible Supabase
+function uuidv4(){
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
+    var r=Math.random()*16|0;
+    return(c==='x'?r:(r&0x3|0x8)).toString(16);
+  });
+}
+
 const V={},I={};
 
 // ─── Constantes ───────────────────────────────────────────────
@@ -583,7 +591,7 @@ function gsAddEntity(){
     async function(){
       var name=document.getElementById('gs-ent-name').value.trim();
       if(!name){toast('Nom obligatoire');return;}
-      var id='ent_'+Date.now();
+      var id=uuidv4();
       GROUP_STRUCTURE.push({id:id,name:name,regions:[]});
       await gsSave('entity',id,name,null,[]);
       addHist('add','Entité "'+name+'" créée');
@@ -613,7 +621,7 @@ function gsAddRegion(entId){
       var name=document.getElementById('gs-reg-name').value.trim();
       if(!name){toast('Nom obligatoire');return;}
       var ent=GROUP_STRUCTURE.find(function(e){return e.id===entId;});
-      var id='reg_'+Date.now();
+      var id=uuidv4();
       ent.regions.push({id:id,name:name,parent_id:entId,countries:[]});
       await gsSave('region',id,name,entId,[]);
       addHist('add','Région "'+name+'" ajoutée à "'+ent.name+'"');
