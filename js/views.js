@@ -365,7 +365,7 @@ function showAddDomainModal(){
       // Créer un processus placeholder pour initialiser le domaine
       var newP={id:'p'+Date.now(),dom:name,proc:'(Nouveau processus)',riskLevel:'faible',risk:1,archived:false};
       PROCESSES.push(newP);
-      sbUpsert('af_processes',{id:newP.id,organization_id:CU.organization_id,dom:name,proc:newP.proc,risk:1,archived:false}).catch(console.warn);
+      sbUpsert('af_processes',{id:newP.id,organization_id:CU.organization_id,dom:name,proc:newP.proc,risk:1,risk_level:'faible',archived:false}).catch(console.warn);
       addHist('add','Domaine "'+name+'" créé');
       renderProcTable();
       toast('Domaine "'+name+'" créé ✓');
@@ -379,7 +379,12 @@ function showRenameDomainModal(dom){
     function(){
       var newName=document.getElementById('m-dom-rename').value.trim();
       if(!newName){toast('Nom obligatoire');return;}
-      PROCESSES.forEach(function(p){if(p.dom===dom)p.dom=newName;});
+      PROCESSES.forEach(function(p){
+        if(p.dom===dom){
+          p.dom=newName;
+          sbUpsert('af_processes',{id:p.id,organization_id:CU.organization_id,dom:newName,proc:p.proc,risk:p.risk,risk_level:p.riskLevel||'faible',archived:p.archived||false}).catch(console.warn);
+        }
+      });
       addHist('edit','Domaine "'+dom+'" renommé en "'+newName+'"');
       renderProcTable();
       toast('Renommé ✓');
@@ -390,11 +395,20 @@ function showRenameDomainModal(dom){
 function editRiskLevel(idx,val){
   PROCESSES[idx].riskLevel=val;
   PROCESSES[idx].risk=RISK_LEVELS.findIndex(function(r){return r.key===val;})+1||1;
-  addHist('edit','Risque "'+PROCESSES[idx].proc+'" modifié → '+val);
-  toast('Risque mis à jour');
+  var p=PROCESSES[idx];
+  sbUpsert('af_processes',{id:p.id,organization_id:CU.organization_id,dom:p.dom,proc:p.proc,risk:p.risk,risk_level:val,archived:p.archived||false}).catch(console.warn);
+  addHist('edit','Risque "'+p.proc+'" modifié → '+val);
+  toast('Risque mis à jour ✓');
 }
 
-function archiveProc(idx){PROCESSES[idx].archived=true;addHist('arch','Process "'+PROCESSES[idx].proc+'" archivé');renderProcTable();toast('Archivé');}
+function archiveProc(idx){
+  PROCESSES[idx].archived=true;
+  var p=PROCESSES[idx];
+  sbUpsert('af_processes',{id:p.id,organization_id:CU.organization_id,dom:p.dom,proc:p.proc,risk:p.risk,risk_level:p.riskLevel||'faible',archived:true}).catch(console.warn);
+  addHist('arch','Process "'+p.proc+'" archivé');
+  renderProcTable();
+  toast('Archivé ✓');
+}
 
 function showAddProcModal(){
   var doms=[...new Set(PROCESSES.map(function(p){return p.dom;}))];
@@ -416,7 +430,7 @@ function showAddProcModal(){
       var riskNum=RISK_LEVELS.findIndex(function(r){return r.key===riskKey;})+1||1;
       var newP={id:'p'+Date.now(),dom:dom,proc:proc,riskLevel:riskKey,risk:riskNum,archived:false};
       PROCESSES.push(newP);
-      sbUpsert('af_processes',{id:newP.id,organization_id:CU.organization_id,dom:dom,proc:proc,risk:riskNum,archived:false}).catch(console.warn);
+      sbUpsert('af_processes',{id:newP.id,organization_id:CU.organization_id,dom:dom,proc:proc,risk:riskNum,risk_level:riskKey,archived:false}).catch(console.warn);
       addHist('add','Process "'+proc+'" ajouté dans "'+dom+'"');
       renderProcTable();
       toast('Processus créé ✓');
@@ -440,6 +454,7 @@ function showEditProcModal(idx){
       var riskKey=document.getElementById('m-risk').value;
       p.riskLevel=riskKey;
       p.risk=RISK_LEVELS.findIndex(function(r){return r.key===riskKey;})+1||1;
+      sbUpsert('af_processes',{id:p.id,organization_id:CU.organization_id,dom:p.dom,proc:p.proc,risk:p.risk,risk_level:p.riskLevel,archived:p.archived||false}).catch(console.warn);
       addHist('edit','Process "'+p.proc+'" modifié');
       renderProcTable();
       toast('Mis à jour ✓');
