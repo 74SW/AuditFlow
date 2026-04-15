@@ -110,7 +110,10 @@ V['dashboard']=()=>{
 
   var html='';
   html+='<div class="topbar"><div class="tbtitle">Tableau de bord — '+_dbYear+'</div>';
-  html+='<button class="bp" onclick="nav(\'plan-audit\')">+ Nouvel audit</button></div>';
+  html+='<div style="display:flex;gap:7px;">'
+    +'<button class="bs" onclick="exportDashboardPDF()" style="font-size:11px;">⬇ Export PDF</button>'
+    +'<button class="bp" onclick="nav(\'plan-audit\')">+ Nouvel audit</button>'
+    +'</div></div>';
   html+='<div class="content" style="display:flex;gap:1rem;align-items:flex-start">';
 
   // ── Colonne de filtres (gauche) ───────────────────────────
@@ -202,6 +205,26 @@ V['dashboard']=()=>{
 };
 
 I['dashboard']=function(){
+  // Bandeau notifications audits en retard
+  var lateAudits=AUDIT_PLAN.filter(function(a){return(a.statut||'').startsWith('En retard');});
+  var lateActs  =ACTIONS.filter(function(a){return a.status==='En retard';});
+  var total=lateAudits.length+lateActs.length;
+  var notifBar=document.getElementById('notif-bar');
+  if(notifBar){
+    if(total>0){
+      notifBar.style.display='flex';
+      notifBar.innerHTML='<span style="font-size:13px;">⚠️</span>'
+        +'<span><strong>'+total+' élément'+(total>1?'s':'')+' en retard</strong> — '
+        +(lateAudits.length?lateAudits.length+' audit'+(lateAudits.length>1?'s':''):'')
+        +(lateAudits.length&&lateActs.length?' · ':'')
+        +(lateActs.length?lateActs.length+' plan'+(lateActs.length>1?'s':'')+' d'action':'')
+        +' nécessitent votre attention.</span>'
+        +'<button onclick="document.getElementById('notif-bar').style.display='none'" '
+        +'style="margin-left:auto;background:none;border:none;cursor:pointer;color:#fff;font-size:16px;padding:0 4px;">×</button>';
+    } else {
+      notifBar.style.display='none';
+    }
+  }
   // Dessiner le donut après rendu
   setTimeout(function(){
     var canvas=document.getElementById('db-donut');
@@ -797,7 +820,10 @@ I['plans-process']=()=>renderPlanProcessTable();
 function renderPlanProcessTable(){
   var doms=[...new Set(PROCESSES.map(function(p){return p.dom;}))];
   var procAudits=AUDIT_PLAN.filter(function(a){return a.type==='Process';});
-  var h='<thead><tr><th>Domaine</th><th>Processus</th><th>Risque</th><th>2025</th><th>2026</th><th>2027</th><th>2028</th></tr></thead><tbody>';
+  var auditedIds=new Set(AUDIT_PLAN.filter(function(a){return a.type==='Process';}).map(function(a){return a.processId;}));
+  var coveragePct=PROCESSES.filter(function(p){return!p.archived;}).length
+    ?Math.round(auditedIds.size/PROCESSES.filter(function(p){return!p.archived;}).length*100):0;
+  var h='<thead><tr><th>Domaine</th><th>Processus</th><th>Risque</th><th>Couverture</th><th>2025</th><th>2026</th><th>2027</th><th>2028</th></tr></thead><tbody>';
   doms.forEach(function(dom){
     var rows=PROCESSES.filter(function(p){return p.dom===dom&&!p.archived;});
     if(!rows.length)return;
@@ -807,14 +833,25 @@ function renderPlanProcessTable(){
         var m=procAudits.find(function(a){return a.processId===p.id&&a.annee===y;});
         return m?'<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;font-weight:500;color:var(--purple-dk)">'+m.titre+'</span><div style="display:flex;gap:3px">'+((m.auditeurs||[]).map(function(id){return avEl(id,16);}).join(''))+'</div></div>':'<span style="color:var(--text-3)">—</span>';
       };
+      var covered=auditedIds.has(p.id);
+      var covBadge=covered
+        ?'<span class="badge bdn" style="font-size:10px;">✓ Audité</span>'
+        :'<span class="badge bpl" style="font-size:10px;">Non audité</span>';
       h+='<tr>'
         +'<td style="font-size:11px;color:var(--text-2)">'+dom+'</td>'
         +'<td style="font-weight:500;font-size:11px">'+p.proc+'</td>'
         +'<td>'+riskLabel(p.riskLevel||'faible')+'</td>'
+        +'<td>'+covBadge+'</td>'
         +'<td>'+yc(2025)+'</td><td>'+yc(2026)+'</td><td>'+yc(2027)+'</td><td>'+yc(2028)+'</td>'
         +'</tr>';
     });
   });
+  // Ligne résumé couverture
+  h+='<tr style="background:var(--purple-lt);font-weight:600;">'
+    +'<td colspan="3" style="font-size:11px;color:var(--purple-dk);padding:8px 10px;">Couverture globale</td>'
+    +'<td style="font-size:11px;color:var(--purple-dk);">'+auditedIds.size+'/'+PROCESSES.filter(function(p){return!p.archived;}).length+' ('+coveragePct+'%)</td>'
+    +'<td colspan="4"></td>'
+    +'</tr>';
   document.getElementById('pp-tbl2').innerHTML=h+'</tbody>';
 }
 
@@ -825,8 +862,15 @@ V['plans-bu']=()=>`
     <button class="bp" onclick="nav('plan-audit')">Gérer le plan audit →</button>
   </div>
   <div class="content">
-    <div style="background:var(--purple-lt);border:.5px solid var(--purple);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--purple-dk);margin-bottom:1rem">
-      Vue consolidée des BU Audits planifiés. Les missions sont gérées depuis <strong>Plan Audit</strong>.
+    <!-- Légende carte -->
+    <div style="display:flex;gap:16px;align-items:center;margin-bottom:.75rem;font-size:12px;">
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;border-radius:50%;background:#5DCAA5;display:inline-block;"></span>Déjà audité</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;border-radius:50%;background:#378ADD;display:inline-block;"></span>Audit futur planifié</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;border-radius:50%;background:#A32D2D;display:inline-block;"></span>Aucun audit prévu</span>
+    </div>
+    <!-- Carte SVG world map -->
+    <div class="card" style="padding:.75rem;margin-bottom:1rem;overflow:hidden;">
+      <canvas id="world-map-canvas" width="900" height="420" style="width:100%;height:auto;border-radius:var(--radius);"></canvas>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:1rem">
       <select id="f-bu-ent" onchange="renderBUTable()"><option value="all">Toutes entités</option></select>
@@ -835,14 +879,148 @@ V['plans-bu']=()=>`
     <div class="tw"><table id="bu-tbl"></table></div>
   </div>`;
 I['plans-bu']=()=>{
-  // Peupler le filtre entités depuis GROUP_STRUCTURE
   var sel=document.getElementById('f-bu-ent');
   if(sel&&GROUP_STRUCTURE.length){
     sel.innerHTML='<option value="all">Toutes entités</option>'
       +GROUP_STRUCTURE.map(function(e){return'<option>'+e.name+'</option>';}).join('');
   }
   renderBUTable();
+  renderWorldMap();
 };
+
+function renderWorldMap(){
+  var canvas=document.getElementById('world-map-canvas');
+  if(!canvas) return;
+  var ctx=canvas.getContext('2d');
+  var W=900,H=420;
+  ctx.clearRect(0,0,W,H);
+
+  // Fond océan
+  ctx.fillStyle='#e8f4f8';
+  ctx.fillRect(0,0,W,H);
+
+  // Collecter pays audités / planifiés depuis AUDIT_PLAN
+  var buAudits=AUDIT_PLAN.filter(function(a){return a.type==='BU';});
+  var auditedCountries=new Set();
+  var plannedCountries=new Set();
+  buAudits.forEach(function(a){
+    var pays=(a.pays||[]).map(function(p){return p.toLowerCase().trim();});
+    var isPast=a.annee<=new Date().getFullYear()&&(a.statut||'').startsWith('Clôturé');
+    var isFuture=!isPast;
+    pays.forEach(function(p){
+      if(isPast) auditedCountries.add(p);
+      else plannedCountries.add(p);
+    });
+  });
+
+  // Données géographiques simplifiées (coordonnées lon/lat → canvas)
+  function proj(lon,lat){
+    var x=((lon+180)/360)*W;
+    var y=((90-lat)/180)*H;
+    return [x,y];
+  }
+
+  function getColor(name){
+    var n=name.toLowerCase();
+    if(auditedCountries.has(n)) return '#5DCAA5';
+    if(plannedCountries.has(n)) return '#378ADD';
+    return '#D1D5DB';
+  }
+
+  // Dessiner les régions connues comme blocs rectangulaires étiquetés
+  // (approche simplifiée — pas de GeoJSON pour rester en vanilla JS)
+  var regions=[
+    {name:'France',      lon:2,   lat:46,  w:4,  h:5},
+    {name:'UK',          lon:-3,  lat:54,  w:3,  h:5},
+    {name:'Germany',     lon:10,  lat:51,  w:4,  h:5},
+    {name:'Belgium',     lon:4,   lat:50,  w:2,  h:2},
+    {name:'Spain',       lon:-3,  lat:40,  w:7,  h:6},
+    {name:'Italy',       lon:12,  lat:43,  w:3,  h:8},
+    {name:'Romania',     lon:25,  lat:45,  w:4,  h:4},
+    {name:'Poland',      lon:20,  lat:52,  w:5,  h:5},
+    {name:'Netherlands', lon:5,   lat:52,  w:2,  h:2},
+    {name:'Maroc',       lon:-5,  lat:32,  w:6,  h:6},
+    {name:'Morocco',     lon:-5,  lat:32,  w:6,  h:6},
+    {name:'Tunisie',     lon:9,   lat:34,  w:3,  h:4},
+    {name:'Tunisia',     lon:9,   lat:34,  w:3,  h:4},
+    {name:'Algérie',     lon:3,   lat:28,  w:10, h:10},
+    {name:'Algeria',     lon:3,   lat:28,  w:10, h:10},
+    {name:'Cameroun',    lon:12,  lat:5,   w:5,  h:6},
+    {name:'Cameroon',    lon:12,  lat:5,   w:5,  h:6},
+    {name:'Liban',       lon:35,  lat:33,  w:2,  h:2},
+    {name:'Lebanon',     lon:35,  lat:33,  w:2,  h:2},
+    {name:'UAE',         lon:54,  lat:24,  w:3,  h:2},
+    {name:'Saudi Arabia',lon:45,  lat:24,  w:10, h:8},
+    {name:'India',       lon:78,  lat:22,  w:12, h:14},
+    {name:'China',       lon:104, lat:35,  w:20, h:18},
+    {name:'USA',         lon:-98, lat:38,  w:30, h:18},
+    {name:'Brazil',      lon:-52, lat:-10, w:22, h:22},
+    {name:'Mexico',      lon:-102,lat:24,  w:10, h:10},
+    {name:'Australia',   lon:134, lat:-25, w:25, h:18},
+    {name:'Japan',       lon:138, lat:36,  w:5,  h:8},
+    {name:'Singapore',   lon:104, lat:1,   w:1,  h:1},
+    {name:'Bulgaria',    lon:25,  lat:43,  w:3,  h:3},
+  ];
+
+  // Fond continents simplifiés
+  var continents=[
+    // Europe
+    {path:[[350,80],[500,80],[520,180],[470,200],[430,190],[380,200],[340,170],[330,120]]},
+    // Afrique
+    {path:[[380,200],[470,200],[490,280],[460,380],[400,390],[360,300],[350,240]]},
+    // Amérique du Nord
+    {path:[[40,60],[220,60],[240,200],[200,230],[120,220],[50,180]]},
+    // Amérique du Sud
+    {path:[[130,230],[210,230],[230,380],[170,410],[120,360],[110,280]]},
+    // Asie
+    {path:[[500,60],[800,60],[820,200],[750,240],[600,250],[520,200]]},
+    // Océanie
+    {path:[[660,280],[780,280],[790,370],[680,380],[650,320]]},
+  ];
+
+  continents.forEach(function(c){
+    ctx.beginPath();
+    ctx.moveTo(c.path[0][0],c.path[0][1]);
+    for(var i=1;i<c.path.length;i++) ctx.lineTo(c.path[i][0],c.path[i][1]);
+    ctx.closePath();
+    ctx.fillStyle='#f0f0ec';
+    ctx.fill();
+    ctx.strokeStyle='#d0cec8';
+    ctx.lineWidth=0.5;
+    ctx.stroke();
+  });
+
+  // Dessiner chaque région/pays avec sa couleur
+  regions.forEach(function(r){
+    var p1=proj(r.lon,r.lat);
+    var p2=proj(r.lon+r.w,r.lat-r.h);
+    var color=getColor(r.name);
+    var isNotable=color!=='#D1D5DB';
+    ctx.fillStyle=color;
+    ctx.beginPath();
+    ctx.roundRect(p1[0],p1[1],p2[0]-p1[0],p2[1]-p1[1],2);
+    ctx.fill();
+    if(isNotable){
+      ctx.strokeStyle='rgba(0,0,0,0.2)';
+      ctx.lineWidth=1;
+      ctx.stroke();
+      // Étiquette pays
+      ctx.fillStyle='rgba(0,0,0,0.7)';
+      ctx.font='bold 9px -apple-system,sans-serif';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      var cx2=(p1[0]+p2[0])/2;
+      var cy2=(p1[1]+p2[1])/2;
+      ctx.fillText(r.name.length>8?r.name.slice(0,7)+'…':r.name,cx2,cy2);
+    }
+  });
+
+  // Titre
+  ctx.fillStyle='#5F5E5A';
+  ctx.font='11px -apple-system,sans-serif';
+  ctx.textAlign='left';
+  ctx.fillText('Carte indicative — basée sur les pays du plan BU',8,H-8);
+}
 
 function renderBUTable(){
   var fe=document.getElementById('f-bu-ent')&&document.getElementById('f-bu-ent').value||'all';
@@ -1086,6 +1264,7 @@ V['audit-detail']=()=>{
         <div class="tbtitle">${a.name}</div>
       </div>
       <div style="display:flex;gap:7px">
+        <button class="bs" onclick="exportAuditPDF(CA)" style="font-size:11px;">⬇ Export PDF</button>
         <button class="bp" onclick="validerEtape()">Valider l'étape →</button>
       </div>
     </div>
@@ -1167,6 +1346,175 @@ function buildExecTable(kc){let h='<div class="tw"><table><thead><tr><th>Contrô
 function buildDocList(docs){if(!docs||!docs.length)return'';return docs.map(function(f,fi){var link=f.url?'<a href="'+f.url+'" target="_blank" rel="noopener" style="color:#534AB7;text-decoration:none;font-weight:500">'+f.name+'</a>':'<span style="font-weight:500">'+f.name+'</span>';var meta=[];if(f.uploadedBy)meta.push(f.uploadedBy);if(f.uploadedAt)meta.push(new Date(f.uploadedAt).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}));if(f.step!==undefined&&f.step!==null&&STEPS[f.step])meta.push('Etape '+(f.step+1)+' — '+STEPS[f.step].s);var metaHtml=meta.length?'<div style="font-size:10px;color:#888;padding-left:18px;margin-top:2px">'+meta.join(' · ')+'</div>':'';var delFn="deleteDoc(CA,'"+(f.path||'').replace(/'/g,"\\'")+"','"+(f.name||'').replace(/'/g,"\\'")+'\')';return'<div style="background:#f8f8f8;border-radius:6px;padding:8px 10px;margin-bottom:6px;border:.5px solid #e0e0e0"><div style="display:flex;align-items:center;gap:6px"><span style="color:#534AB7">&#9646;</span><span style="flex:1;font-size:12px">'+link+'</span><span style="font-size:10px;color:#aaa;flex-shrink:0">'+(f.size||'')+'</span><button class="bs" style="font-size:10px;padding:2px 7px" onclick="renameDoc('+fi+')">Renommer</button><button class="bs" style="font-size:10px;padding:2px 7px" onclick="replaceDoc('+fi+')">Remplacer</button><button class="bd" style="font-size:10px;padding:2px 7px" onclick="'+delFn+'">Supprimer</button></div>'+metaHtml+'</div>';}).join('');}
 function buildAssigneeOpts(assigned,current){return(assigned||[]).map(function(id){return'<option value="'+id+'"'+(current===id?' selected':'')+'>'+((TM[id]&&TM[id].name)||id)+'</option>';}).join('');}
 function buildTplCards(names,badgeCls){return names.map(function(n){return'<div class="card" style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between"><div style="font-size:12px;font-weight:500">'+n+'</div><span class="badge '+badgeCls+'">'+(badgeCls==='bpc'?'Process':'BU')+'</span></div><div style="font-size:11px;color:var(--text-2)">3 phases · 11 étapes</div><button class="bs" style="width:100%">Utiliser</button></div>';}).join('');}
+
+
+// ══════════════════════════════════════════════════════════════
+//  PROFIL UTILISATEUR
+// ══════════════════════════════════════════════════════════════
+V['profil']=()=>`
+  <div class="topbar"><div class="tbtitle">Mon profil</div></div>
+  <div class="content" style="max-width:520px;">
+    <div class="card" style="padding:1.5rem;margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:.5px solid var(--border);">
+        <div class="uav" style="width:48px;height:48px;font-size:16px;border-radius:50%;background:var(--purple-lt);color:var(--purple-dk);display:flex;align-items:center;justify-content:center;font-weight:600;">${CU?CU.initials||'?':'?'}</div>
+        <div>
+          <div style="font-size:15px;font-weight:600;">${CU?CU.name:'—'}</div>
+          <div style="font-size:12px;color:var(--text-2);">${CU?CU.email:'—'}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px;">${CU&&CU.role==='admin'?'Admin / Directeur':'Auditeur'}</div>
+        </div>
+      </div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:.875rem;">Changer le mot de passe</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <label class="f-lbl">Mot de passe actuel</label>
+          <input type="password" id="pw-current" class="f-inp" style="width:100%;" placeholder="••••••••"/>
+        </div>
+        <div>
+          <label class="f-lbl">Nouveau mot de passe</label>
+          <input type="password" id="pw-new" class="f-inp" style="width:100%;" placeholder="8 car. min., 1 majuscule, 1 spécial"/>
+        </div>
+        <div>
+          <label class="f-lbl">Confirmer le nouveau mot de passe</label>
+          <input type="password" id="pw-confirm" class="f-inp" style="width:100%;" placeholder="••••••••"/>
+        </div>
+        <div id="pw-error" style="display:none;font-size:12px;color:var(--red);background:var(--red-lt);padding:6px 10px;border-radius:6px;"></div>
+        <button class="bp" style="width:100%;margin-top:4px;" onclick="changePassword()">Enregistrer le nouveau mot de passe</button>
+      </div>
+    </div>
+  </div>`;
+I['profil']=()=>{};
+
+async function changePassword(){
+  var current =document.getElementById('pw-current').value;
+  var newPwd   =document.getElementById('pw-new').value;
+  var confirm2 =document.getElementById('pw-confirm').value;
+  var errEl    =document.getElementById('pw-error');
+  errEl.style.display='none';
+
+  var user=USERS.find(function(u){return u.id===CU.id;});
+  if(!user||user.pwd!==current){
+    errEl.textContent='Mot de passe actuel incorrect.';
+    errEl.style.display='block';
+    return;
+  }
+  if(newPwd.length<8||!/[A-Z]/.test(newPwd)||!/[^a-zA-Z0-9]/.test(newPwd)){
+    errEl.textContent='Le nouveau mot de passe doit contenir 8 caractères min., 1 majuscule et 1 caractère spécial.';
+    errEl.style.display='block';
+    return;
+  }
+  if(newPwd!==confirm2){
+    errEl.textContent='Les mots de passe ne correspondent pas.';
+    errEl.style.display='block';
+    return;
+  }
+  // Mettre à jour en mémoire
+  user.pwd=newPwd;
+  CU.pwd=newPwd;
+  sessionStorage.setItem('af_user',JSON.stringify(CU));
+  // Mettre à jour en base
+  try {
+    await getSB().from('af_users').update({pwd:newPwd}).eq('id',CU.id);
+  } catch(e){ console.warn('pwd update:',e); }
+  toast('Mot de passe mis à jour ✓');
+  document.getElementById('pw-current').value='';
+  document.getElementById('pw-new').value='';
+  document.getElementById('pw-confirm').value='';
+}
+
+// ══════════════════════════════════════════════════════════════
+//  EXPORT PDF
+// ══════════════════════════════════════════════════════════════
+function exportDashboardPDF(){
+  var CY=window._dbYear||new Date().getFullYear();
+  var filtered=AUDIT_PLAN.filter(function(a){
+    return a.annee===CY
+      &&(window._dbAuditeur==='all'||(a.auditeurs||[]).includes(window._dbAuditeur))
+      &&(window._dbStatut==='all'||(a.statut||'').startsWith(window._dbStatut));
+  });
+  var cClosed =filtered.filter(function(a){return(a.statut||'').startsWith('Clôturé');}).length;
+  var cInProg =filtered.filter(function(a){return(a.statut||'').startsWith('En cours');}).length;
+  var cPlanned=filtered.filter(function(a){return(a.statut||'').startsWith('Planifié');}).length;
+
+  var rows=filtered.map(function(ap){
+    var detail=ap.type==='Process'?(ap.domaine+' › '+ap.process):((ap.pays||[]).join(', '));
+    var auds=(ap.auditeurs||[]).map(function(id){return TM[id]?TM[id].name:id;}).join(', ');
+    return '<tr style="font-size:11px;">'
+      +'<td style="padding:5px 8px;border-bottom:1px solid #eee;">'+ap.titre+'</td>'
+      +'<td style="padding:5px 8px;border-bottom:1px solid #eee;">'+ap.type+'</td>'
+      +'<td style="padding:5px 8px;border-bottom:1px solid #eee;">'+detail+'</td>'
+      +'<td style="padding:5px 8px;border-bottom:1px solid #eee;">'+auds+'</td>'
+      +'<td style="padding:5px 8px;border-bottom:1px solid #eee;">'+ap.annee+'</td>'
+      +'<td style="padding:5px 8px;border-bottom:1px solid #eee;">'+(ap.statut||'Planifié')+'</td>'
+      +'</tr>';
+  }).join('');
+
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"/>'
+    +'<title>AuditFlow — Dashboard '+CY+'</title>'
+    +'<style>body{font-family:-apple-system,sans-serif;padding:2rem;color:#1A1A18;}'
+    +'h1{font-size:20px;margin-bottom:4px;}h2{font-size:14px;color:#5F5E5A;margin-bottom:1.5rem;font-weight:400;}'
+    +'.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:1.5rem;}'
+    +'.mc{border:1px solid #e0e0e0;border-radius:8px;padding:12px 16px;}'
+    +'.ml{font-size:11px;color:#888;margin-bottom:4px;}.mv{font-size:22px;font-weight:700;}'
+    +'table{width:100%;border-collapse:collapse;}'
+    +'th{background:#f5f4f0;padding:7px 8px;text-align:left;font-size:11px;border-bottom:2px solid #ddd;}'
+    +'@media print{body{padding:1rem;}}</style></head><body>'
+    +'<h1>AuditFlow — Tableau de bord '+CY+'</h1>'
+    +'<h2>Généré le '+new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})+' · '+filtered.length+' audit(s)</h2>'
+    +'<div class="metrics">'
+    +'<div class="mc"><div class="ml">Clôturés</div><div class="mv" style="color:#3B6D11;">'+cClosed+'</div></div>'
+    +'<div class="mc"><div class="ml">En cours</div><div class="mv" style="color:#534AB7;">'+cInProg+'</div></div>'
+    +'<div class="mc"><div class="ml">Planifiés</div><div class="mv" style="color:#854F0B;">'+cPlanned+'</div></div>'
+    +'</div>'
+    +'<table><thead><tr><th>Titre</th><th>Type</th><th>Détail</th><th>Auditeurs</th><th>Année</th><th>Statut</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table>'
+    +'</body></html>';
+
+  var w=window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(function(){w.print();},400);
+}
+
+function exportAuditPDF(auditId){
+  var ap=AUDIT_PLAN.find(function(a){return a.id===auditId;});
+  if(!ap){toast('Audit introuvable');return;}
+  var d=AUD_DATA[auditId]||{tasks:{},controls:{},findings:[],docs:[],notes:''};
+  var pct=calculateAuditProgress(ap);
+  var auds=(ap.auditeurs||[]).map(function(id){return TM[id]?TM[id].name:id;}).join(', ');
+
+  var findingsHtml='';
+  (d.findings||[]).forEach(function(f){
+    findingsHtml+='<div style="margin-bottom:8px;padding:8px;border:1px solid #eee;border-radius:6px;">'
+      +'<div style="font-weight:600;font-size:12px;">'+f.title+'</div>'
+      +'<div style="font-size:11px;color:#666;margin-top:3px;">'+f.desc+'</div>'
+      +'</div>';
+  });
+
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"/>'
+    +'<title>Rapport — '+ap.titre+'</title>'
+    +'<style>body{font-family:-apple-system,sans-serif;padding:2rem;color:#1A1A18;max-width:800px;margin:0 auto;}'
+    +'h1{font-size:18px;}h2{font-size:13px;color:#534AB7;border-bottom:2px solid #534AB7;padding-bottom:4px;margin:1.5rem 0 .75rem;}'
+    +'.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1rem;}'
+    +'.mrow{font-size:12px;}.ml{color:#888;font-size:11px;}'
+    +'@media print{body{padding:1rem;}}</style></head><body>'
+    +'<h1>Rapport d'audit — '+ap.titre+'</h1>'
+    +'<div class="meta">'
+    +'<div class="mrow"><span class="ml">Type</span><br>'+ap.type+'</div>'
+    +'<div class="mrow"><span class="ml">Année</span><br>'+ap.annee+'</div>'
+    +'<div class="mrow"><span class="ml">Statut</span><br>'+(ap.statut||'Planifié')+'</div>'
+    +'<div class="mrow"><span class="ml">Avancement</span><br>'+pct+'%</div>'
+    +'<div class="mrow"><span class="ml">Auditeurs</span><br>'+auds+'</div>'
+    +'<div class="mrow"><span class="ml">Généré le</span><br>'+new Date().toLocaleDateString('fr-FR')+'</div>'
+    +'</div>'
+    +(d.notes?'<h2>Notes</h2><p style="font-size:12px;">'+d.notes+'</p>':'')
+    +(findingsHtml?'<h2>Findings ('+d.findings.length+')</h2>'+findingsHtml:'<h2>Findings</h2><p style="font-size:12px;color:#888;">Aucun finding documenté.</p>')
+    +'</body></html>';
+
+  var w=window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(function(){w.print();},400);
+}
 
 // Helper anti-XSS pour les attributs onclick (apostrophes)
 function _escQ(s){return(s||'').replace(/'/g,'&#39;');}
