@@ -209,18 +209,11 @@ I['settings'] = async function(){
   await settingsLoad();
 };
 
-// ── Chargement depuis Supabase ────────────────────────────────
+// ── Chargement depuis localStorage (SharePoint à venir) ──────
 async function settingsLoad(){
   try {
-    var res = await getSB()
-      .from('af_org_config')
-      .select('settings, org_name_override')
-      .eq('organization_id', CU.organization_id)
-      .maybeSingle();
-
-    if(res.error){ console.warn('[Settings] load:', res.error.message); }
-
-    var data = res.data;
+    var stored = localStorage.getItem('af_settings');
+    var data = stored ? JSON.parse(stored) : null;
     if(data){
       if(data.settings){
         _settings = Object.assign(_settings, data.settings);
@@ -390,19 +383,8 @@ async function settingsSave(){
       org_name_override: _settings.org_name, // colonne dénormalisée
     };
 
-    var res = await getSB()
-      .from('af_org_config')
-      .upsert(payload, { onConflict: 'organization_id' });
-
-    if(res.error) throw new Error(res.error.message);
-
-    // Mettre à jour le nom dans organizations aussi
-    if(_settings.org_name){
-      await getSB()
-        .from('organizations')
-        .update({ name: _settings.org_name })
-        .eq('id', CU.organization_id);
-    }
+    // Sauvegarder en localStorage
+    localStorage.setItem('af_settings', JSON.stringify(payload));
 
     // Appliquer immédiatement dans l'UI
     settingsApplyToApp();
@@ -445,18 +427,15 @@ function settingsApplyToApp(){
 // Appelé depuis launchApp() dans app.js après connexion réussie
 async function settingsApplyOnLoad(){
   try {
-    var res = await getSB()
-      .from('af_org_config')
-      .select('settings')
-      .eq('organization_id', CU.organization_id)
-      .maybeSingle();
-
-    if(res.data && res.data.settings){
-      _settings = Object.assign(_settings, res.data.settings);
-      settingsApplyToApp();
+    var stored = localStorage.getItem('af_settings');
+    if(stored){
+      var data = JSON.parse(stored);
+      if(data && data.settings){
+        _settings = Object.assign(_settings, data.settings);
+        settingsApplyToApp();
+      }
     }
   } catch(e){
-    // Non bloquant
     console.warn('[Settings] applyOnLoad:', e.message);
   }
 }
