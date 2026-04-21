@@ -97,9 +97,19 @@ async function bootstrapApp() {
     CU.initials = authorized.initials || CU.initials;
     sessionStorage.setItem('af_user', JSON.stringify(CU));
 
-    // 5. Charger toutes les données
+    // 5. Charger toutes les données (avec retry si rien n'arrive)
     showLoadingScreen('Chargement des données...');
     await loadAllData();
+
+    // Sécurité : si le premier chargement semble vide, re-tenter une fois
+    // (parfois le token n'est pas encore "réchauffé" au premier appel)
+    if (!AUDIT_PLAN || AUDIT_PLAN.length === 0) {
+      if (!PROCESSES || PROCESSES.length === 0) {
+        console.log('[App] Premier chargement vide, nouvelle tentative...');
+        await new Promise(function(r){ setTimeout(r, 500); });
+        await loadAllData();
+      }
+    }
 
     // 6. Lancer l'appli
     launchApp();
@@ -269,7 +279,7 @@ function doLogout() {
 }
 
 // ── Navigation ───────────────────────────────────────────────
-function nav(view) {
+async function nav(view) {
   CV = view;
   document.querySelectorAll('.nav[data-view]').forEach(function(n){
     n.classList.remove('active');
@@ -278,6 +288,16 @@ function nav(view) {
   if (a) a.classList.add('active');
   var c = document.getElementById('vc');
   c.innerHTML = '<div class="loading"><div class="sp"></div>Chargement...</div>';
+
+  // Si les données sont vides (premier chargement raté), recharger avant d'afficher
+  if (typeof loadAllData === 'function'
+      && typeof AUDIT_PLAN !== 'undefined'
+      && AUDIT_PLAN.length === 0
+      && typeof PROCESSES !== 'undefined'
+      && PROCESSES.length === 0) {
+    try { await loadAllData(); } catch(e) { console.warn('[nav] reload failed:', e); }
+  }
+
   setTimeout(function() {
     try {
       c.innerHTML = V[view] ? V[view]() : '<div class="content">Vue introuvable.</div>';
