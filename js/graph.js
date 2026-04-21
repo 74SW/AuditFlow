@@ -596,3 +596,12 @@ async function revokeUser(userId) {
   await spDelete('AF_Users', userId);
   USERS = USERS.filter(function(u){ return u.id !== userId; });
 }
+// Initialiser MSAL au chargement de la page
+document.addEventListener('DOMContentLoaded', async function() {
+  try {
+    await getMsalApp();
+    console.log('[MSAL] App initialisée au chargement ✓');
+  } catch(e) {
+    console.warn('[MSAL] Init error:', e.message);
+  }
+});
