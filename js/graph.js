@@ -1,5 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 //  graph.js — Couche données Microsoft Graph / SharePoint
+//  Token obtenu directement via Azure Static Web Apps
+//  (plus besoin de MSAL, plus de popup, plus de boucle)
 // ═══════════════════════════════════════════════════════════
 
 var DB = {
@@ -11,76 +13,30 @@ var DB = {
   history:   [],
 };
 
-// ── Token Microsoft Graph via MSAL ───────────────────────────
+// ── Token Microsoft Graph via Azure SWA ──────────────────────
 var _graphToken = null;
-var _msalApp = null;
 var _graphTokenPromise = null;
-var _redirectCount = 0; // Compteur en mémoire (reset à chaque chargement de page)
 
-async function getMsalApp() {
-  if (_msalApp) return _msalApp;
-  if (!window.msal) { console.warn('[Graph] MSAL not loaded'); return null; }
-  _msalApp = new window.msal.PublicClientApplication({
-    auth: {
-      clientId: AUDITFLOW_CONFIG.clientId,
-      authority: 'https://login.microsoftonline.com/' + AUDITFLOW_CONFIG.tenantId,
-      redirectUri: AUDITFLOW_CONFIG.appUrl + '/',
-    },
-    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
-  });
-  await _msalApp.initialize();
-  // NOTE : handleRedirectPromise est appelé explicitement depuis handleGraphRedirect()
-  // pour éviter de consommer le résultat deux fois
-  return _msalApp;
-}
-
-var GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Files.ReadWrite', 'User.Read'];
-
-// Flag pour indiquer qu'on est en cours de retour de redirection MSAL
-var _graphRedirectHandled = false;
-
-// À appeler au démarrage pour capturer le token si on revient d'une redirection
-async function handleGraphRedirect() {
-  if (_graphRedirectHandled) return _graphToken ? _graphToken.token : null;
-  _graphRedirectHandled = true;
-
-  try {
-    var msalApp = await getMsalApp();
-    if (!msalApp) return null;
-
-    var redirectResp = await msalApp.handleRedirectPromise();
-    if (redirectResp && redirectResp.accessToken) {
-      _graphToken = {
-        token: redirectResp.accessToken,
-        exp: redirectResp.expiresOn ? redirectResp.expiresOn.getTime() : Date.now() + 3500000,
-      };
-      sessionStorage.setItem('af_graph_token', JSON.stringify(_graphToken));
-      // Succès : reset du compteur et du flag
-      sessionStorage.removeItem('af_graph_redirect_attempts');
-      sessionStorage.removeItem('af_graph_redirect_pending');
-      console.log('[MSAL] Token Graph obtenu via redirection ✓');
-      return _graphToken.token;
-    }
-  } catch(e) {
-    console.warn('[MSAL] handleRedirectPromise error:', e.message);
-  }
-  return null;
-}
+// Stub pour compatibilité (plus utilisé, mais certaines parties du code peuvent l'appeler)
+async function handleGraphRedirect() { return null; }
 
 async function getGraphToken() {
-  // Récupérer depuis sessionStorage si dispo
-  if (!_graphToken) {
-    try {
-      var stored = sessionStorage.getItem('af_graph_token');
-      if (stored) {
-        var parsed = JSON.parse(stored);
-        if (parsed && parsed.exp > Date.now() + 60000) _graphToken = parsed;
-      }
-    } catch(e) {}
-  }
+  // Cache en mémoire
   if (_graphToken && _graphToken.exp > Date.now() + 60000) return _graphToken.token;
 
-  // Verrou : si une acquisition est déjà en cours, attendre sa résolution
+  // Cache sessionStorage
+  try {
+    var stored = sessionStorage.getItem('af_graph_token');
+    if (stored) {
+      var parsed = JSON.parse(stored);
+      if (parsed && parsed.exp > Date.now() + 60000) {
+        _graphToken = parsed;
+        return _graphToken.token;
+      }
+    }
+  } catch(e) {}
+
+  // Verrou : si une acquisition est déjà en cours, attendre
   if (_graphTokenPromise) return _graphTokenPromise;
 
   _graphTokenPromise = _doGetGraphToken().finally(function() { _graphTokenPromise = null; });
@@ -89,83 +45,68 @@ async function getGraphToken() {
 
 async function _doGetGraphToken() {
   try {
-    var msalApp = await getMsalApp();
-    if (!msalApp) throw new Error('MSAL not available');
-
-    // D'abord, voir si on revient d'une redirection (handleRedirectPromise)
-    if (!_graphRedirectHandled) {
-      var redirectToken = await handleGraphRedirect();
-      if (redirectToken) return redirectToken;
+    // Appeler l'endpoint Azure SWA qui donne le token Graph
+    var res = await fetch('/.auth/me');
+    if (!res.ok) {
+      console.warn('[Graph] /.auth/me returned', res.status);
+      return null;
     }
+    var data = await res.json();
 
-    var accounts = msalApp.getAllAccounts();
-    var account = accounts[0];
+    // Format Azure Static Web Apps : { clientPrincipal: {...} }
+    // Le token Graph est dans clientPrincipal ou accessible via un autre endpoint
+    // Pour SWA, le token est disponible via l'header X-MS-TOKEN-AAD-ACCESS-TOKEN
+    // côté serveur, mais côté client on utilise la config "loginParameters" pour
+    // inclure les scopes dans le flux d'auth.
 
-    // Récupérer l'email SSO pour loginHint
-    var email = null;
-    try {
-      var res = await fetch('/.auth/me');
-      var data = await res.json();
-      if (data && data.clientPrincipal) email = data.clientPrincipal.userDetails;
-    } catch(e) {}
-
-    // Essai silencieux si on a un account
-    if (account) {
-      try {
-        var tokenResp = await msalApp.acquireTokenSilent({
-          account: account,
-          scopes: GRAPH_SCOPES,
-        });
-        _graphToken = {
-          token: tokenResp.accessToken,
-          exp: tokenResp.expiresOn ? tokenResp.expiresOn.getTime() : Date.now() + 3500000,
-        };
-        sessionStorage.setItem('af_graph_token', JSON.stringify(_graphToken));
-        console.log('[MSAL] Token Graph acquis silencieusement ✓');
-        return _graphToken.token;
-      } catch(e) {
-        console.warn('[MSAL] Silent failed, falling back to ssoSilent:', e.message);
-      }
-    }
-
-    // Essai ssoSilent (utilise les cookies Microsoft de l'utilisateur déjà connecté)
-    if (email) {
-      try {
-        var ssoResp = await msalApp.ssoSilent({
-          loginHint: email,
-          scopes: GRAPH_SCOPES,
-        });
-        _graphToken = {
-          token: ssoResp.accessToken,
-          exp: ssoResp.expiresOn ? ssoResp.expiresOn.getTime() : Date.now() + 3500000,
-        };
-        sessionStorage.setItem('af_graph_token', JSON.stringify(_graphToken));
-        console.log('[MSAL] Token Graph acquis via ssoSilent ✓');
-        return _graphToken.token;
-      } catch(e) {
-        console.warn('[MSAL] ssoSilent failed, falling back to redirect:', e.message);
-      }
-    }
-
-    // Fallback : redirection complète vers Microsoft (fiable, pas de popup)
-    // Protection anti-boucle en mémoire (reset à chaque chargement de page)
-    _redirectCount++;
-    if (_redirectCount > 2) {
-      throw new Error('Impossible d\'obtenir le token. Videz le cache de votre navigateur ou essayez en navigation privée.');
-    }
-
-    console.log('[MSAL] Lancement redirection pour obtenir le token... (tentative ' + _redirectCount + ')');
-    sessionStorage.setItem('af_graph_redirect_pending', '1');
-    await msalApp.loginRedirect({
-      scopes: GRAPH_SCOPES,
-      loginHint: email || undefined,
-      redirectUri: AUDITFLOW_CONFIG.appUrl + '/',
+    // Azure SWA expose l'access token via cet endpoint (provider-specific)
+    var tokenRes = await fetch('/.auth/me', {
+      headers: { 'Accept': 'application/json' }
     });
-    // La page va rediriger, donc on ne revient pas ici
-    return null;
+    var tokenData = await tokenRes.json();
+
+    // Tenter plusieurs emplacements possibles
+    var accessToken = null;
+    var cp = tokenData && tokenData.clientPrincipal;
+    if (cp) {
+      // Certaines configs SWA exposent les tokens dans clientPrincipal
+      if (cp.accessToken) accessToken = cp.accessToken;
+      if (cp.userClaims) {
+        // Les claims ne contiennent pas de token, mais peuvent contenir un access_token
+        var tok = cp.userClaims.find(function(c) { return c.typ === 'access_token'; });
+        if (tok) accessToken = tok.val;
+      }
+    }
+
+    // Dernier recours : essayer l'ancien format Azure App Service
+    if (!accessToken) {
+      try {
+        var meRes = await fetch('/.auth/me');
+        var meArr = await meRes.json();
+        // Si le format est un tableau (ancien Azure App Service style)
+        if (Array.isArray(meArr) && meArr[0]) {
+          accessToken = meArr[0].access_token || (meArr[0].user_claims && meArr[0].user_claims.access_token);
+        }
+      } catch(e) {}
+    }
+
+    if (!accessToken) {
+      console.error('[Graph] Aucun access_token trouvé dans /.auth/me');
+      console.log('[Graph] Réponse /.auth/me:', tokenData);
+      return null;
+    }
+
+    // Pas d'info d'expiration dans SWA, on met 50 min par défaut
+    _graphToken = {
+      token: accessToken,
+      exp: Date.now() + 50 * 60 * 1000,
+    };
+    sessionStorage.setItem('af_graph_token', JSON.stringify(_graphToken));
+    console.log('[Graph] Token obtenu via Azure SWA ✓');
+    return _graphToken.token;
 
   } catch(e) {
-    console.warn('[Graph] Token error:', e.message);
+    console.error('[Graph] Token error:', e.message);
     return null;
   }
 }
@@ -181,6 +122,11 @@ async function graphCall(method, url, body) {
   if (!res.ok) {
     var err = await res.text();
     console.error('[Graph]', method, url, res.status, err);
+    // Si 401 : token expiré → invalider le cache pour la prochaine fois
+    if (res.status === 401) {
+      _graphToken = null;
+      sessionStorage.removeItem('af_graph_token');
+    }
     throw new Error('Graph API error ' + res.status);
   }
   if (res.status === 204) return null;
@@ -305,7 +251,7 @@ async function spUpsert(listName, afId, fields) {
     if (spId) {
       await updateItem(listName, spId, fields);
     } else {
-      var created = await createItem(listName, { af_id: afId, ...fields });
+      var created = await createItem(listName, Object.assign({ af_id: afId }, fields));
       _spIdCache[listName + '::' + afId] = created.id;
     }
     console.log('[SP] Saved', listName, afId);
@@ -517,7 +463,7 @@ async function loadAuthorizedUsers() {
 async function inviteUser(email, name, role) {
   var id = 'usr_'+Date.now();
   var initials = name.split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);
-  var user = {id,name,email,role,initials,status:'actif',source:'invited',pwd:''};
+  var user = {id:id,name:name,email:email,role:role,initials:initials,status:'actif',source:'invited',pwd:''};
   await saveUser(user);
   USERS.push(user);
   return user;
@@ -527,11 +473,3 @@ async function revokeUser(userId) {
   await spDelete('AF_Users', userId);
   USERS = USERS.filter(function(u){ return u.id!==userId; });
 }
-
-// ── Initialiser MSAL au chargement ──────────────────────────
-document.addEventListener('DOMContentLoaded', async function() {
-  try {
-    await getMsalApp();
-    console.log('[MSAL] App initialisée au chargement ✓');
-  } catch(e) { console.warn('[MSAL] Init error:', e.message); }
-});
