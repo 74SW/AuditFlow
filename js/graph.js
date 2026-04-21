@@ -28,7 +28,8 @@ async function getMsalApp() {
     cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
   });
   await _msalApp.initialize();
-  try { await _msalApp.handleRedirectPromise(); } catch(e) { console.warn('[MSAL] handleRedirectPromise:', e.message); }
+  // NOTE : handleRedirectPromise est appelé explicitement depuis handleGraphRedirect()
+  // pour éviter de consommer le résultat deux fois
   return _msalApp;
 }
 
@@ -53,6 +54,9 @@ async function handleGraphRedirect() {
         exp: redirectResp.expiresOn ? redirectResp.expiresOn.getTime() : Date.now() + 3500000,
       };
       sessionStorage.setItem('af_graph_token', JSON.stringify(_graphToken));
+      // Succès : reset du compteur et du flag
+      sessionStorage.removeItem('af_graph_redirect_attempts');
+      sessionStorage.removeItem('af_graph_redirect_pending');
       console.log('[MSAL] Token Graph obtenu via redirection ✓');
       return _graphToken.token;
     }
@@ -124,7 +128,17 @@ async function _doGetGraphToken() {
     }
 
     // Fallback : redirection complète vers Microsoft (fiable, pas de popup)
-    console.log('[MSAL] Lancement redirection pour obtenir le token...');
+    // Protection anti-boucle : max 2 tentatives de redirection par session
+    var attempts = parseInt(sessionStorage.getItem('af_graph_redirect_attempts') || '0');
+    if (attempts >= 2) {
+      console.error('[MSAL] Trop de tentatives de redirection, abandon');
+      sessionStorage.removeItem('af_graph_redirect_attempts');
+      sessionStorage.removeItem('af_graph_redirect_pending');
+      throw new Error('Impossible d\'obtenir le token après plusieurs tentatives. Essayez de vous déconnecter et reconnecter.');
+    }
+    sessionStorage.setItem('af_graph_redirect_attempts', String(attempts + 1));
+
+    console.log('[MSAL] Lancement redirection pour obtenir le token... (tentative ' + (attempts+1) + ')');
     sessionStorage.setItem('af_graph_redirect_pending', '1');
     await msalApp.loginRedirect({
       scopes: GRAPH_SCOPES,
