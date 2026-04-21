@@ -102,13 +102,7 @@ async function addProcRisk(procId){
   if(!proc.risks)proc.risks=[];
   proc.risks.push({id:'r'+Date.now(),label:label,probability:prob,impact:imp});
   // Sauvegarder en base
-  await sbUpsert('af_processes',{
-    id:proc.id,organization_id:CU.organization_id,
-    dom:proc.dom,proc:proc.proc,
-    risk:proc.risk,risk_level:proc.riskLevel||'faible',
-    archived:proc.archived||false,
-    risks:proc.risks
-  });
+  await spUpsert('AF_Processes',proc.id,{dom:proc.dom,proc:proc.proc,risk:proc.risk,risk_level:proc.riskLevel||'faible',archived:proc.archived||false,risks_json:JSON.stringify(proc.risks),Title:proc.proc});
   document.getElementById('nr-label').value='';
   document.getElementById('proc-risk-list').innerHTML=(function(){
     var risks=proc.risks;
@@ -128,13 +122,7 @@ async function removeProcRisk(procId,ri){
   var proc=PROCESSES.find(function(p){return p.id===procId;});
   if(!proc||!proc.risks)return;
   proc.risks.splice(ri,1);
-  await sbUpsert('af_processes',{
-    id:proc.id,organization_id:CU.organization_id,
-    dom:proc.dom,proc:proc.proc,
-    risk:proc.risk,risk_level:proc.riskLevel||'faible',
-    archived:proc.archived||false,
-    risks:proc.risks
-  });
+  await spUpsert('AF_Processes',proc.id,{dom:proc.dom,proc:proc.proc,risk:proc.risk,risk_level:proc.riskLevel||'faible',archived:proc.archived||false,risks_json:JSON.stringify(proc.risks),Title:proc.proc});
   // Rafraîchir la liste dans la modale
   document.getElementById('proc-risk-list').innerHTML=(function(){
     var risks=proc.risks;
@@ -702,7 +690,7 @@ function showAddDomainModal(){
       // Créer un processus placeholder pour initialiser le domaine
       var newP={id:'p'+Date.now(),dom:name,proc:'(Nouveau processus)',riskLevel:'faible',risk:1,archived:false};
       PROCESSES.push(newP);
-      sbUpsert('af_processes',{id:newP.id,organization_id:CU.organization_id,dom:name,proc:newP.proc,risk:1,risk_level:'faible',archived:false}).catch(console.warn);
+      spUpsert('AF_Processes',newP.id,{dom:name,proc:newP.proc,risk:1,risk_level:'faible',archived:false,Title:newP.proc}).catch(console.warn);
       addHist('add','Domaine "'+name+'" créé');
       renderProcTable();
       toast('Domaine "'+name+'" créé ✓');
@@ -719,7 +707,7 @@ function showRenameDomainModal(dom){
       PROCESSES.forEach(function(p){
         if(p.dom===dom){
           p.dom=newName;
-          sbUpsert('af_processes',{id:p.id,organization_id:CU.organization_id,dom:newName,proc:p.proc,risk:p.risk,risk_level:p.riskLevel||'faible',archived:p.archived||false}).catch(console.warn);
+          spUpsert('AF_Processes',p.id,{dom:newName,proc:p.proc,risk:p.risk,risk_level:p.riskLevel||'faible',archived:p.archived||false,Title:p.proc}).catch(console.warn);
         }
       });
       addHist('edit','Domaine "'+dom+'" renommé en "'+newName+'"');
@@ -733,7 +721,7 @@ function editRiskLevel(idx,val){
   PROCESSES[idx].riskLevel=val;
   PROCESSES[idx].risk=RISK_LEVELS.findIndex(function(r){return r.key===val;})+1||1;
   var p=PROCESSES[idx];
-  sbUpsert('af_processes',{id:p.id,organization_id:CU.organization_id,dom:p.dom,proc:p.proc,risk:p.risk,risk_level:val,archived:p.archived||false}).catch(console.warn);
+  spUpsert('AF_Processes',p.id,{dom:p.dom,proc:p.proc,risk:p.risk,risk_level:val,archived:p.archived||false,Title:p.proc}).catch(console.warn);
   addHist('edit','Risque "'+p.proc+'" modifié → '+val);
   toast('Risque mis à jour ✓');
 }
@@ -741,7 +729,7 @@ function editRiskLevel(idx,val){
 function archiveProc(idx){
   PROCESSES[idx].archived=true;
   var p=PROCESSES[idx];
-  sbUpsert('af_processes',{id:p.id,organization_id:CU.organization_id,dom:p.dom,proc:p.proc,risk:p.risk,risk_level:p.riskLevel||'faible',archived:true}).catch(console.warn);
+  spUpsert('AF_Processes',p.id,{dom:p.dom,proc:p.proc,risk:p.risk,risk_level:p.riskLevel||'faible',archived:true,Title:p.proc}).catch(console.warn);
   addHist('arch','Process "'+p.proc+'" archivé');
   renderProcTable();
   toast('Archivé ✓');
@@ -767,7 +755,7 @@ function showAddProcModal(){
       var riskNum=RISK_LEVELS.findIndex(function(r){return r.key===riskKey;})+1||1;
       var newP={id:'p'+Date.now(),dom:dom,proc:proc,riskLevel:riskKey,risk:riskNum,archived:false};
       PROCESSES.push(newP);
-      sbUpsert('af_processes',{id:newP.id,organization_id:CU.organization_id,dom:dom,proc:proc,risk:riskNum,risk_level:riskKey,archived:false}).catch(console.warn);
+      spUpsert('AF_Processes',newP.id,{dom:dom,proc:proc,risk:riskNum,risk_level:riskKey,archived:false,Title:proc}).catch(console.warn);
       addHist('add','Process "'+proc+'" ajouté dans "'+dom+'"');
       renderProcTable();
       toast('Processus créé ✓');
@@ -791,7 +779,7 @@ function showEditProcModal(idx){
       var riskKey=document.getElementById('m-risk').value;
       p.riskLevel=riskKey;
       p.risk=RISK_LEVELS.findIndex(function(r){return r.key===riskKey;})+1||1;
-      sbUpsert('af_processes',{id:p.id,organization_id:CU.organization_id,dom:p.dom,proc:p.proc,risk:p.risk,risk_level:p.riskLevel,archived:p.archived||false}).catch(console.warn);
+      spUpsert('AF_Processes',p.id,{dom:p.dom,proc:p.proc,risk:p.risk,risk_level:p.riskLevel,archived:p.archived||false,Title:p.proc}).catch(console.warn);
       addHist('edit','Process "'+p.proc+'" modifié');
       renderProcTable();
       toast('Mis à jour ✓');
@@ -825,44 +813,18 @@ I['plan-bu']=async function(){
 // Charger depuis Supabase (table af_group_structure)
 async function gsLoad(){
   try {
-    var res=await getSB()
-      .from('af_group_structure')
-      .select('*')
-      .eq('organization_id',CU.organization_id)
-      .order('created_at',{ascending:true});
-    if(res.error){console.warn('[GS]',res.error.message);return;}
-    // Reconstruire la structure hiérarchique depuis les lignes plates
-    var entities={};
-    (res.data||[]).forEach(function(row){
-      if(row.type==='entity'){
-        if(!entities[row.id]) entities[row.id]={id:row.id,name:row.name,regions:[]};
-      }
-    });
-    (res.data||[]).forEach(function(row){
-      if(row.type==='region'&&entities[row.parent_id]){
-        entities[row.parent_id].regions.push({id:row.id,name:row.name,parent_id:row.parent_id,countries:row.countries||[]});
-      }
-    });
-    GROUP_STRUCTURE=Object.values(entities);
-  } catch(e){
-    console.warn('[GS] load exception:',e.message);
-  }
+    var stored=sessionStorage.getItem('af_group_structure');
+    if(stored) GROUP_STRUCTURE=JSON.parse(stored);
+  } catch(e){ console.warn('[GS] load:',e.message); }
 }
 
 // Sauvegarder une ligne dans af_group_structure
 async function gsSave(type,id,name,parentId,countries){
-  await sbUpsert('af_group_structure',{
-    id:id,
-    organization_id:CU.organization_id,
-    type:type,
-    name:name,
-    parent_id:parentId||null,
-    countries:countries||[],
-  });
+  sessionStorage.setItem('af_group_structure',JSON.stringify(GROUP_STRUCTURE));
 }
 
 async function gsDelete(id){
-  await sbDelete('af_group_structure',id);
+  sessionStorage.setItem('af_group_structure',JSON.stringify(GROUP_STRUCTURE));
 }
 
 // Rendu de la structure en colonnes
@@ -1146,7 +1108,7 @@ async function deleteAudit(idx){
   var ap=AUDIT_PLAN[idx];
   if(!confirm('Supprimer "'+ap.titre+'" ?'))return;
   AUDIT_PLAN.splice(idx,1);
-  await sbDelete('af_audit_plan',ap.id);
+  await spDelete('AF_AuditPlan',ap.id);
   addHist('del','Audit "'+ap.titre+'" supprimé');
   renderPlanAuditTable();toast('Supprimé');
 }
@@ -1537,7 +1499,7 @@ async function deleteAction(id){
   var idx=ACTIONS.findIndex(function(a){return a.id===id;});
   if(idx===-1)return;
   if(!confirm('Supprimer "'+ACTIONS[idx].title+'" ?'))return;
-  await sbDelete('af_actions',id);
+  await spDelete('AF_Actions',id);
   ACTIONS.splice(idx,1);
   addHist('del',"Plan d'action supprimé");
   renderActionList();
@@ -1799,7 +1761,8 @@ async function changePassword(){
   sessionStorage.setItem('af_user',JSON.stringify(CU));
   // Mettre à jour en base
   try {
-    await getSB().from('af_users').update({pwd:newPwd}).eq('id',CU.id);
+    var userObj=USERS.find(function(u){return u.id===CU.id;});
+    if(userObj) await saveUser(userObj);
   } catch(e){ console.warn('pwd update:',e); }
   toast('Mot de passe mis à jour ✓');
   document.getElementById('pw-current').value='';
