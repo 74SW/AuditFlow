@@ -23,22 +23,6 @@
     ".json": "application/json",
     ".svg": "image/svg+xml"
   },
-  "auth": {
-    "identityProviders": {
-      "azureActiveDirectory": {
-        "registration": {
-          "openIdIssuer": "https://login.microsoftonline.com/300f59df-78e6-436f-9b27-b64973e34f7d/v2.0",
-          "clientIdSettingName": "AAD_CLIENT_ID",
-          "clientSecretSettingName": "AAD_CLIENT_SECRET"
-        },
-        "login": {
-          "loginParameters": [
-            "scope=openid profile email offline_access https://graph.microsoft.com/Sites.ReadWrite.All https://graph.microsoft.com/Files.ReadWrite https://graph.microsoft.com/User.Read"
-          ]
-        }
-      }
-    }
-  },
   "responseOverrides": {
     "401": {
       "redirect": "/.auth/login/aad",
