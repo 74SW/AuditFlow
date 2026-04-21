@@ -12,6 +12,16 @@ async function initLogin() {
   // Afficher écran de chargement
   showLoadingScreen('Connexion en cours...');
 
+  // 0. Si on revient d'une redirection MSAL, capturer le token d'abord
+  // (handleGraphRedirect est défini dans graph.js)
+  try {
+    if (typeof handleGraphRedirect === 'function') {
+      await handleGraphRedirect();
+    }
+  } catch(e) {
+    console.warn('[App] handleGraphRedirect error:', e.message);
+  }
+
   // 1. Session locale encore active ?
   var saved = sessionStorage.getItem('af_user');
   if (saved) {
@@ -44,6 +54,15 @@ async function bootstrapApp() {
     // 1. Obtenir le token Graph AVANT tout
     showLoadingScreen('Connexion à SharePoint...');
     var token = await getGraphToken();
+
+    // Si getGraphToken a lancé une redirection vers Microsoft, la page est en
+    // train de partir — on ne fait rien de plus, on attend que ça charge.
+    if (sessionStorage.getItem('af_graph_redirect_pending') === '1' && !token) {
+      // La redirection est en cours, ne rien faire
+      showLoadingScreen('Redirection vers Microsoft...');
+      return;
+    }
+
     if (!token) {
       showErrorScreen(
         'Impossible de se connecter à SharePoint',
@@ -52,6 +71,9 @@ async function bootstrapApp() {
       );
       return;
     }
+
+    // Nettoyer le flag de redirection si on a un token
+    sessionStorage.removeItem('af_graph_redirect_pending');
     console.log('[App] Token Graph prêt ✓');
 
     // 2. Charger la liste des utilisateurs autorisés
