@@ -1075,14 +1075,14 @@ function auditModalBody(ap){
       if (!procsInDom.length) return '';
       var items = procsInDom.map(function(p){
         var checked = currentPids.indexOf(p.id)>=0 ? ' checked' : '';
-        return '<label style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer">'
-          + '<input type="checkbox" class="m-proc-cb" value="'+p.id+'"'+checked+'>'
-          + '<span>'+p.proc+'</span>'
+        return '<label class="cb-item" style="display:flex !important;flex-direction:row !important;align-items:center !important;gap:8px !important;padding:4px 0 !important;font-size:12px !important;cursor:pointer !important;margin:0 !important">'
+          + '<input type="checkbox" class="m-proc-cb" value="'+p.id+'"'+checked+' style="margin:0 !important;flex-shrink:0">'
+          + '<span style="flex:1;text-align:left">'+p.proc+'</span>'
           + '</label>';
       }).join('');
-      return '<div style="margin-bottom:8px">'
-        + '<div style="font-size:10px;font-weight:600;color:var(--purple-dk);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;padding-bottom:2px;border-bottom:.5px solid var(--border)">'+dom+'</div>'
-        + items
+      return '<div style="margin-bottom:10px">'
+        + '<div style="font-size:10px;font-weight:600;color:var(--purple-dk);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;padding-bottom:3px;border-bottom:.5px solid var(--border)">'+dom+'</div>'
+        + '<div style="display:flex;flex-direction:column;gap:2px">'+items+'</div>'
         + '</div>';
     }).join('');
   } else {
@@ -1117,17 +1117,47 @@ function auditModalBody(ap){
   h+='</select></div><div><label>Statut</label><select id="m-statut">';
   ['Planifié','En cours','Clôturé'].forEach(function(s){h+='<option'+(ap&&ap.statut===s?' selected':'')+'>'+s+'</option>';});
   h+='</select></div></div>';
-  // Auditeurs : checkbox dynamique depuis USERS (rôle auditeur ou admin)
-  h+='<div><label>Auditeurs assignés</label><div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">';
-  var availAuditors = (USERS||[]).filter(function(u){return u.status==='actif' && (u.role==='auditeur' || u.role==='admin');});
-  if (!availAuditors.length) {
+  // Auditeurs : dédupliqués par nom + exclusion de l'admin courant (auto-assigné)
+  // Les auditeurs actifs sont automatiquement disponibles, l'admin actuel est pré-assigné
+  h+='<div><label>Auditeurs assignés</label>';
+  h+='<div style="font-size:10px;color:var(--text-3);margin-bottom:5px">Vous (admin) êtes automatiquement assigné.</div>';
+  h+='<div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">';
+  // Récupérer les auditeurs actifs (rôle = auditeur)
+  var availAuditors = (USERS||[]).filter(function(u){return u.status==='actif' && u.role==='auditeur';});
+  // Dédupliquer par nom (cas des alias @74software + @axway)
+  var seenNames = {};
+  var uniqueAuditors = [];
+  availAuditors.forEach(function(u){
+    var key = (u.name||'').trim().toLowerCase();
+    if (!seenNames[key]) {
+      seenNames[key] = true;
+      uniqueAuditors.push(u);
+    }
+  });
+  // Vérifier si un auditeur est coché (dans l'audit existant, peut-être via un id différent mais même nom)
+  var isAuditorChecked = function(user) {
+    if (!ap || !ap.auditeurs) return false;
+    // Match direct par id
+    if (ap.auditeurs.indexOf(user.id)>=0) return true;
+    // Match par nom (en cas d'alias)
+    var myName = (user.name||'').trim().toLowerCase();
+    return ap.auditeurs.some(function(aId){
+      var matched = (USERS||[]).find(function(u){return u.id===aId;});
+      if (matched && (matched.name||'').trim().toLowerCase()===myName) return true;
+      // Aussi tester TM (pour les anciens ids 'sh', 'ne', 'pm')
+      var tm = TM[aId];
+      if (tm && tm.name && tm.name.trim().toLowerCase().indexOf(myName.split(' ')[0])>=0) return true;
+      return false;
+    });
+  };
+  if (!uniqueAuditors.length) {
     // Fallback legacy
-    h+='<label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" class="m-auditor" value="sh"'+((ap&&ap.auditeurs&&ap.auditeurs.includes('sh'))?' checked':'')+'>  Selma H.</label>';
-    h+='<label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" class="m-auditor" value="ne"'+((ap&&ap.auditeurs&&ap.auditeurs.includes('ne'))?' checked':'')+'>  Nisrine E.</label>';
+    h+='<label style="display:inline-flex !important;flex-direction:row !important;align-items:center !important;gap:6px !important;font-size:12px !important;margin:0 !important;cursor:pointer"><input type="checkbox" class="m-auditor" value="sh" style="margin:0"'+((ap&&ap.auditeurs&&ap.auditeurs.includes('sh'))?' checked':'')+'> Selma H.</label>';
+    h+='<label style="display:inline-flex !important;flex-direction:row !important;align-items:center !important;gap:6px !important;font-size:12px !important;margin:0 !important;cursor:pointer"><input type="checkbox" class="m-auditor" value="ne" style="margin:0"'+((ap&&ap.auditeurs&&ap.auditeurs.includes('ne'))?' checked':'')+'> Nisrine E.</label>';
   } else {
-    availAuditors.forEach(function(u){
-      var checked = (ap && ap.auditeurs && ap.auditeurs.includes(u.id)) ? ' checked' : '';
-      h+='<label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" class="m-auditor" value="'+u.id+'"'+checked+'> '+u.name+'</label>';
+    uniqueAuditors.forEach(function(u){
+      var checked = isAuditorChecked(u) ? ' checked' : '';
+      h+='<label style="display:inline-flex !important;flex-direction:row !important;align-items:center !important;gap:6px !important;font-size:12px !important;margin:0 !important;cursor:pointer;padding:4px 8px;background:var(--bg);border-radius:4px"><input type="checkbox" class="m-auditor" value="'+u.id+'" style="margin:0"'+checked+'> '+u.name+'</label>';
     });
   }
   h+='</div></div>';
@@ -1170,7 +1200,7 @@ function collectAuditModal(){
   var type=document.getElementById('m-type').value;
   var titre=document.getElementById('m-titre').value.trim();
   if(!titre){toast('Titre obligatoire');return null;}
-  // Collecter les auditeurs (nouvelle version avec .m-auditor)
+  // Collecter les auditeurs cochés
   var auditeurs=[];
   var auditorCbs = document.querySelectorAll('.m-auditor:checked');
   if (auditorCbs.length) {
@@ -1179,6 +1209,10 @@ function collectAuditModal(){
     // Fallback legacy
     if (document.getElementById('a-sh') && document.getElementById('a-sh').checked) auditeurs.push('sh');
     if (document.getElementById('a-ne') && document.getElementById('a-ne').checked) auditeurs.push('ne');
+  }
+  // Auto-assigner l'admin courant si ce n'est pas déjà fait
+  if (CU && CU.role==='admin' && CU.id && auditeurs.indexOf(CU.id)<0) {
+    auditeurs.unshift(CU.id);
   }
   var dateDebut=document.getElementById('m-deb')?document.getElementById('m-deb').value:'';
   var dateFin=document.getElementById('m-fin')?document.getElementById('m-fin').value:'';
