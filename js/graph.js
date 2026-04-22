@@ -289,12 +289,18 @@ async function findSpItemId(listName, afId) {
 }
 
 async function spUpsert(listName, afId, fields) {
+  // Blocage viewer : interdit toute modification
+  if (typeof CU !== 'undefined' && CU && CU.role === 'viewer') {
+    console.warn('[SP] Upsert bloqué — utilisateur en lecture seule');
+    if (typeof toast === 'function') toast('Accès en lecture seule');
+    return;
+  }
   try {
     var spId = await findSpItemId(listName, afId);
     if (spId) {
       await updateItem(listName, spId, fields);
     } else {
-      var created = await createItem(listName, { af_id: afId, ...fields });
+      var created = await createItem(listName, Object.assign({ af_id: afId }, fields));
       _spIdCache[listName + '::' + afId] = created.id;
     }
     console.log('[SP] Saved', listName, afId);
@@ -305,6 +311,12 @@ async function spUpsert(listName, afId, fields) {
 }
 
 async function spDelete(listName, afId) {
+  // Blocage viewer : interdit toute suppression
+  if (typeof CU !== 'undefined' && CU && CU.role === 'viewer') {
+    console.warn('[SP] Delete bloqué — utilisateur en lecture seule');
+    if (typeof toast === 'function') toast('Accès en lecture seule');
+    return;
+  }
   try {
     var spId = await findSpItemId(listName, afId);
     if (spId) { await deleteItem(listName, spId); delete _spIdCache[listName + '::' + afId]; }
@@ -356,6 +368,10 @@ async function loadAllData() {
 
     AUDIT_PLAN=DB.auditPlan; PROCESSES=DB.processes; ACTIONS=DB.actions;
     HISTORY_LOG=DB.history; USERS=DB.users;
+
+    // Synchroniser TM et AVC avec les utilisateurs SharePoint
+    syncTeamMembers();
+
     console.log('[SP] Data loaded — audits:',AUDIT_PLAN.length,'processes:',PROCESSES.length,'actions:',ACTIONS.length);
   } catch(e) { console.warn('[SP] loadAllData error:', e.message); }
 }
@@ -432,6 +448,11 @@ async function saveUser(user) {
 }
 
 async function uploadDoc(auditId, file, stepIndex, userName) {
+  // Blocage viewer
+  if (typeof CU !== 'undefined' && CU && CU.role === 'viewer') {
+    if (typeof toast === 'function') toast('Accès en lecture seule');
+    return null;
+  }
   var ap = AUDIT_PLAN.find(function(a){ return a.id===auditId; });
   var folderName = ap ? ap.titre.replace(/[^a-zA-Z0-9 _-]/g,'_') : auditId;
   var driveId = await getDriveId();
@@ -515,6 +536,70 @@ async function inviteUser(email, name, role) {
 async function revokeUser(userId) {
   await spDelete('AF_Users', userId);
   USERS = USERS.filter(function(u){ return u.id!==userId; });
+}
+
+// ── Synchroniser TM (Team Members) avec les utilisateurs SharePoint ──
+// Permet d'utiliser tous les utilisateurs de AF_Users comme auditeurs,
+// et évite les crashs quand un auditeur référencé n'est pas dans TM
+function syncTeamMembers() {
+  if (!USERS || !USERS.length) return;
+
+  // Palette de couleurs pour les avatars
+  var palette = [
+    'background:#CECBF6;color:#3C3489', // violet
+    'background:#9FE1CB;color:#085041', // vert
+    'background:#B5D4F4;color:#0C447C', // bleu
+    'background:#F6CECE;color:#893434', // rouge
+    'background:#F6E8CE;color:#897734', // jaune
+    'background:#E8CEF6;color:#703489', // mauve
+    'background:#CEE8F6;color:#347089', // cyan
+    'background:#F6D4CE;color:#895034', // orange
+  ];
+
+  var newTM = {};
+  var newAVC = {};
+  var colorIdx = 0;
+
+  USERS.forEach(function(u) {
+    if (!u.id || u.status !== 'actif') return;
+
+    // Initiales
+    var initials = u.initials;
+    if (!initials && u.name) {
+      initials = u.name.split(' ').map(function(w){return w[0]||'';}).join('').toUpperCase().slice(0,2);
+    }
+    if (!initials) initials = (u.email || '??').slice(0,2).toUpperCase();
+
+    // Nom court affiché
+    var shortName = u.name || u.email || u.id;
+    // Format "Prénom N." pour compact
+    var parts = shortName.split(' ');
+    if (parts.length >= 2) {
+      shortName = parts[0] + ' ' + parts[parts.length-1][0] + '.';
+    }
+
+    // Titre (rôle humanisé)
+    var title = u.role === 'admin' ? 'Administrateur(trice)' :
+                u.role === 'viewer' ? 'Observateur(trice)' :
+                'Auditeur(rice)';
+
+    newTM[u.id] = {
+      name: shortName,
+      short: initials,
+      role: u.role || 'auditeur',
+      title: title,
+    };
+
+    newAVC[u.id] = palette[colorIdx % palette.length];
+    colorIdx++;
+  });
+
+  // Fusionner : on garde l'ancien TM hardcodé ET on ajoute les nouveaux
+  // (pour ne pas casser les audits existants qui référencent encore pm/sh/ne)
+  Object.keys(newTM).forEach(function(k) { TM[k] = newTM[k]; });
+  Object.keys(newAVC).forEach(function(k) { AVC[k] = newAVC[k]; });
+
+  console.log('[SP] TM sync — ' + Object.keys(TM).length + ' membres disponibles');
 }
 
 // ── Initialiser MSAL au chargement ──────────────────────────
