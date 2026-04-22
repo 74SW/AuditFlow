@@ -242,7 +242,7 @@ var LIST_SCHEMAS = {
     {name:'findings_json',text:{}},{name:'mgt_resp_json',text:{}},
     {name:'docs_json',text:{}},{name:'notes',text:{}},
     {name:'maturity_json',text:{}},{name:'risk_links_json',text:{}},
-    {name:'audit_risks_json',text:{}},
+    {name:'audit_risks_json',text:{}},{name:'step_states_json',text:{}},
   ],
   AF_History: [{name:'af_type',text:{}},{name:'msg',text:{}},{name:'user_name',text:{}}],
   AF_Users: [
@@ -388,13 +388,14 @@ async function loadAuditData(auditId) {
         docs:tryParse(f.docs_json,[]), notes:f.notes||'',
         maturity:tryParse(f.maturity_json,null), riskLinks:tryParse(f.risk_links_json,{}),
         auditRisks:tryParse(f.audit_risks_json,[]),
+        stepStates:tryParse(f.step_states_json,{}),
       };
     } else {
-      DB.auditData[auditId] = {tasks:{},controls:{},findings:[],mgtResp:[],docs:[],notes:'',maturity:null,riskLinks:{},auditRisks:[]};
+      DB.auditData[auditId] = {tasks:{},controls:{},findings:[],mgtResp:[],docs:[],notes:'',maturity:null,riskLinks:{},auditRisks:[],stepStates:{}};
     }
   } catch(e) {
     console.warn('[SP] loadAuditData error:', e.message);
-    DB.auditData[auditId] = {tasks:{},controls:{},findings:[],mgtResp:[],docs:[],notes:'',maturity:null,riskLinks:{},auditRisks:[]};
+    DB.auditData[auditId] = {tasks:{},controls:{},findings:[],mgtResp:[],docs:[],notes:'',maturity:null,riskLinks:{},auditRisks:[],stepStates:{}};
   }
   AUD_DATA[auditId] = DB.auditData[auditId];
   return DB.auditData[auditId];
@@ -408,7 +409,9 @@ async function saveAuditData(auditId) {
     findings_json:JSON.stringify(d.findings), mgt_resp_json:JSON.stringify(d.mgtResp),
     docs_json:JSON.stringify(d.docs), notes:d.notes||'',
     maturity_json:JSON.stringify(d.maturity), risk_links_json:JSON.stringify(d.riskLinks||{}),
-    audit_risks_json:JSON.stringify(d.auditRisks||[]), Title:auditId,
+    audit_risks_json:JSON.stringify(d.auditRisks||[]),
+    step_states_json:JSON.stringify(d.stepStates||{}),
+    Title:auditId,
   });
 }
 
