@@ -1075,14 +1075,14 @@ function auditModalBody(ap){
       if (!procsInDom.length) return '';
       var items = procsInDom.map(function(p){
         var checked = currentPids.indexOf(p.id)>=0 ? ' checked' : '';
-        return '<label class="cb-item" style="display:flex !important;flex-direction:row !important;align-items:center !important;gap:8px !important;padding:4px 0 !important;font-size:12px !important;cursor:pointer !important;margin:0 !important">'
-          + '<input type="checkbox" class="m-proc-cb" value="'+p.id+'"'+checked+' style="margin:0 !important;flex-shrink:0">'
-          + '<span style="flex:1;text-align:left">'+p.proc+'</span>'
+        return '<label>'
+          + '<input type="checkbox" class="m-proc-cb" value="'+p.id+'"'+checked+'>'
+          + '<span>'+p.proc+'</span>'
           + '</label>';
       }).join('');
       return '<div style="margin-bottom:10px">'
         + '<div style="font-size:10px;font-weight:600;color:var(--purple-dk);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;padding-bottom:3px;border-bottom:.5px solid var(--border)">'+dom+'</div>'
-        + '<div style="display:flex;flex-direction:column;gap:2px">'+items+'</div>'
+        + '<div>'+items+'</div>'
         + '</div>';
     }).join('');
   } else {
@@ -1121,7 +1121,7 @@ function auditModalBody(ap){
   // Les auditeurs actifs sont automatiquement disponibles, l'admin actuel est pré-assigné
   h+='<div><label>Auditeurs assignés</label>';
   h+='<div style="font-size:10px;color:var(--text-3);margin-bottom:5px">Vous (admin) êtes automatiquement assigné.</div>';
-  h+='<div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">';
+  h+='<div class="cb-list" style="display:flex;gap:6px;flex-wrap:wrap">';
   // Récupérer les auditeurs actifs (rôle = auditeur)
   var availAuditors = (USERS||[]).filter(function(u){return u.status==='actif' && u.role==='auditeur';});
   // Dédupliquer par nom (cas des alias @74software + @axway)
@@ -1137,27 +1137,23 @@ function auditModalBody(ap){
   // Vérifier si un auditeur est coché (dans l'audit existant, peut-être via un id différent mais même nom)
   var isAuditorChecked = function(user) {
     if (!ap || !ap.auditeurs) return false;
-    // Match direct par id
     if (ap.auditeurs.indexOf(user.id)>=0) return true;
-    // Match par nom (en cas d'alias)
     var myName = (user.name||'').trim().toLowerCase();
     return ap.auditeurs.some(function(aId){
       var matched = (USERS||[]).find(function(u){return u.id===aId;});
       if (matched && (matched.name||'').trim().toLowerCase()===myName) return true;
-      // Aussi tester TM (pour les anciens ids 'sh', 'ne', 'pm')
       var tm = TM[aId];
       if (tm && tm.name && tm.name.trim().toLowerCase().indexOf(myName.split(' ')[0])>=0) return true;
       return false;
     });
   };
   if (!uniqueAuditors.length) {
-    // Fallback legacy
-    h+='<label style="display:inline-flex !important;flex-direction:row !important;align-items:center !important;gap:6px !important;font-size:12px !important;margin:0 !important;cursor:pointer"><input type="checkbox" class="m-auditor" value="sh" style="margin:0"'+((ap&&ap.auditeurs&&ap.auditeurs.includes('sh'))?' checked':'')+'> Selma H.</label>';
-    h+='<label style="display:inline-flex !important;flex-direction:row !important;align-items:center !important;gap:6px !important;font-size:12px !important;margin:0 !important;cursor:pointer"><input type="checkbox" class="m-auditor" value="ne" style="margin:0"'+((ap&&ap.auditeurs&&ap.auditeurs.includes('ne'))?' checked':'')+'> Nisrine E.</label>';
+    h+='<label><input type="checkbox" class="m-auditor" value="sh"'+((ap&&ap.auditeurs&&ap.auditeurs.includes('sh'))?' checked':'')+'><span>Selma H.</span></label>';
+    h+='<label><input type="checkbox" class="m-auditor" value="ne"'+((ap&&ap.auditeurs&&ap.auditeurs.includes('ne'))?' checked':'')+'><span>Nisrine E.</span></label>';
   } else {
     uniqueAuditors.forEach(function(u){
       var checked = isAuditorChecked(u) ? ' checked' : '';
-      h+='<label style="display:inline-flex !important;flex-direction:row !important;align-items:center !important;gap:6px !important;font-size:12px !important;margin:0 !important;cursor:pointer;padding:4px 8px;background:var(--bg);border-radius:4px"><input type="checkbox" class="m-auditor" value="'+u.id+'" style="margin:0"'+checked+'> '+u.name+'</label>';
+      h+='<label><input type="checkbox" class="m-auditor" value="'+u.id+'"'+checked+'><span>'+u.name+'</span></label>';
     });
   }
   h+='</div></div>';
