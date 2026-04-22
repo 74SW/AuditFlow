@@ -1620,9 +1620,9 @@ V['audit-detail']=()=>{
         <button class="bs" onclick="nav('dashboard')">← Retour</button>
         <div class="tbtitle">${a.name}</div>
       </div>
-      <div style="display:flex;gap:7px">
+      <div style="display:flex;gap:7px" id="step-actions">
         <button class="bs" onclick="exportAuditPDF(CA)" style="font-size:11px;">⬇ Export PDF</button>
-        <button class="bp" onclick="validerEtape()">Valider l'étape →</button>
+        ${getStepActionButtonHTML()}
       </div>
     </div>
     <div class="content">
@@ -1658,7 +1658,70 @@ function renderDetContent(){
   const s=STEPS[CS];
   const d=getAudData(CA);
   const stepTasks=d.tasks[CS]||[];
-  if(CT==='roles'){return`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem"><div style="font-size:13px;font-weight:600">Étape ${CS+1} — ${s.s}</div>${badge(a.status)}</div><div class="g2" style="margin-bottom:.875rem">${(a.assignedTo||[]).map(id=>{const m=TM[id];if(!m)return'';const my=stepTasks.filter(t=>t.assignee===id);return`<div class="card" style="background:var(--bg)"><div style="font-size:10px;color:var(--text-3);margin-bottom:5px">Auditrice</div><div style="display:flex;align-items:center;gap:7px">${avEl(id,26)}<div><div style="font-size:12px;font-weight:500">${m.name}</div><div style="font-size:10px;color:${my.filter(t=>t.done).length===my.length&&my.length>0?'var(--green)':'var(--amber)'}">${my.length?my.filter(t=>t.done).length+'/'+my.length+' tâches':'Aucune tâche'}</div></div></div></div>`;}).join('')}<div class="card" style="background:var(--bg)"><div style="font-size:10px;color:var(--text-3);margin-bottom:5px">Valideur</div><div style="display:flex;align-items:center;gap:7px">${avEl('pm',26)}<div><div style="font-size:12px;font-weight:500">Philippe M.</div><div style="font-size:10px;color:var(--amber)">Validation requise</div></div></div></div></div>${CU?.role!=='admin'?'<div class="notice">La validation est réservée au Directeur Audit.</div>':''}</div>`;}
+  if(CT==='roles'){
+    // Bloc workflow de revue pour les étapes clés
+    var workflowBlock = '';
+    if (isKeyStep(CS)) {
+      var state = getStepState(CA, CS);
+      var stateBadge = '';
+      var stateDesc = '';
+      if (state.status === 'preparation') {
+        stateBadge = '<span class="badge bpl">🔘 En préparation</span>';
+        stateDesc = 'Les auditeurs travaillent sur cette étape.';
+      } else if (state.status === 'finalized') {
+        stateBadge = '<span class="badge btg">🟡 Finalisée — en attente revue</span>';
+        stateDesc = 'Finalisée par '+(state.finalizedBy||'—')
+          + (state.finalizedAt?' le '+new Date(state.finalizedAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'}):'');
+      } else if (state.status === 'reviewed') {
+        stateBadge = '<span class="badge bdn">✅ Revue & validée</span>';
+        stateDesc = 'Revue par '+(state.reviewedBy||'—')
+          + (state.reviewedAt?' le '+new Date(state.reviewedAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'}):'');
+      }
+
+      // Préparateurs = auditeurs de l'audit
+      var ap = AUDIT_PLAN.find(function(x){return x.id===CA;});
+      var preparers = (ap && ap.auditeurs) ? ap.auditeurs : [];
+      var preparersHtml = preparers.length
+        ? preparers.map(function(id){
+            var m = TM[id];
+            if (!m) return '';
+            return '<div style="display:flex;align-items:center;gap:7px;padding:4px 0">'+avEl(id,22)+'<span style="font-size:12px">'+m.name+'</span></div>';
+          }).join('')
+        : '<div style="font-size:11px;color:var(--text-3)">Aucun auditeur assigné</div>';
+
+      // Reviewer = admin(s)
+      var admins = (USERS||[]).filter(function(u){return u.role==='admin' && u.status==='actif';});
+      var reviewersHtml = admins.length
+        ? admins.map(function(u){
+            var m = TM[u.id];
+            return '<div style="display:flex;align-items:center;gap:7px;padding:4px 0">'
+              + (m ? avEl(u.id,22) : '')
+              + '<span style="font-size:12px">'+u.name+'</span></div>';
+          }).join('')
+        : '<div style="font-size:11px;color:var(--text-3)">Aucun admin</div>';
+
+      workflowBlock =
+        '<div class="card" style="background:var(--purple-lt);border:.5px solid var(--purple);margin-bottom:.875rem;padding:12px 14px">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
+          + '<div style="font-size:12px;font-weight:600;color:var(--purple-dk)">⚡ Workflow de revue — étape clé</div>'
+          + stateBadge
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--text-2);margin-bottom:10px">'+stateDesc+'</div>'
+        + '<div class="g2">'
+          + '<div>'
+            + '<div style="font-size:10px;color:var(--text-3);font-weight:500;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Préparateurs</div>'
+            + preparersHtml
+          + '</div>'
+          + '<div>'
+            + '<div style="font-size:10px;color:var(--text-3);font-weight:500;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Reviewer</div>'
+            + reviewersHtml
+          + '</div>'
+        + '</div>'
+        + '</div>';
+    }
+
+    return workflowBlock + `<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem"><div style="font-size:13px;font-weight:600">Étape ${CS+1} — ${s.s}</div>${badge(a.status)}</div><div class="g2" style="margin-bottom:.875rem">${(a.assignedTo||[]).map(id=>{const m=TM[id];if(!m)return'';const my=stepTasks.filter(t=>t.assignee===id);return`<div class="card" style="background:var(--bg)"><div style="font-size:10px;color:var(--text-3);margin-bottom:5px">Auditrice</div><div style="display:flex;align-items:center;gap:7px">${avEl(id,26)}<div><div style="font-size:12px;font-weight:500">${m.name}</div><div style="font-size:10px;color:${my.filter(t=>t.done).length===my.length&&my.length>0?'var(--green)':'var(--amber)'}">${my.length?my.filter(t=>t.done).length+'/'+my.length+' tâches':'Aucune tâche'}</div></div></div></div>`;}).join('')}<div class="card" style="background:var(--bg)"><div style="font-size:10px;color:var(--text-3);margin-bottom:5px">Valideur</div><div style="display:flex;align-items:center;gap:7px">${avEl('pm',26)}<div><div style="font-size:12px;font-weight:500">Philippe M.</div><div style="font-size:10px;color:var(--amber)">Validation requise</div></div></div></div></div>${CU?.role!=='admin'?'<div class="notice">La validation est réservée au Directeur Audit.</div>':''}</div>`;
+  }
   if(CT==='tasks'){const done=stepTasks.filter(t=>t.done).length;return`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem"><div style="font-size:13px;font-weight:600">Tâches — ${s.s}</div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:var(--text-2)">${done}/${stepTasks.length}</span><button class="bs" style="font-size:11px" onclick="showNewTaskModal()">+ Ajouter</button></div></div><div id="task-list">${renderTaskList(stepTasks,a)}</div></div>`;}
   if(CT==='controls'){const ctrls=d.controls[CS]||[];return`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.875rem"><div style="font-size:13px;font-weight:600">Contrôles identifiés</div><button class="bs" style="font-size:11px" onclick="showAddControlModal()">+ Ajouter</button></div>${buildControlList(ctrls)}</div>`;}
   if(CT==='controls-exec'){const step5c=d.controls[4]||[];const keyExist=step5c.filter(c=>c.clef&&c.design==='existing');const targets=step5c.filter(c=>c.design==='target');return`<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:.875rem">Tests — Contrôles clefs existants</div>${keyExist.length?buildExecTable(keyExist):'<div style="font-size:12px;color:var(--text-3);padding:.5rem">Aucun contrôle clef existant.</div>'}<div style="font-size:13px;font-weight:600;margin:.875rem 0 .5rem">Contrôles Target — anomalies automatiques</div>${buildTargetList(targets)}</div>`;}
@@ -1676,6 +1739,137 @@ function switchDetTab(tab){CT=tab;document.getElementById('det-tabs').innerHTML=
 
 var REQUIRED_DOCS={0:['Audit Planning Memo'],1:['Work Program'],2:['Kick Off Slides','Meeting Invitation'],3:['Narratif'],4:['Testing Strategy'],5:['Testing Documentation'],6:['Rapport']};
 function getMissingDocs(stepIndex,docs){var required=REQUIRED_DOCS[stepIndex];if(!required||!required.length)return[];var uploadedNames=(docs||[]).map(function(f){return f.name.toLowerCase();});return required.filter(function(req){return!uploadedNames.some(function(name){return name.indexOf(req.toLowerCase())!==-1;});});}
+// ── Workflow d'étape : finalisation + revue ────────────────────
+// Structure : d.stepStates[stepIdx] = { status, finalizedBy, finalizedAt, reviewedBy, reviewedAt }
+// status: 'preparation' (défaut) | 'finalized' | 'reviewed'
+
+function getStepState(auditId, stepIdx) {
+  var d = getAudData(auditId);
+  if (!d.stepStates) d.stepStates = {};
+  if (!d.stepStates[stepIdx]) d.stepStates[stepIdx] = { status: 'preparation' };
+  return d.stepStates[stepIdx];
+}
+
+function isKeyStep(stepIdx) {
+  return (typeof KEY_STEPS!=='undefined' ? KEY_STEPS : [2,4,5,6,8]).indexOf(stepIdx) >= 0;
+}
+
+// Génère le bouton d'action affiché en haut à droite selon le statut de l'étape
+function getStepActionButtonHTML() {
+  if (CS < 0 || CS > 9) return '';
+  var isAdmin = CU && CU.role==='admin';
+  var isKey = isKeyStep(CS);
+
+  // Étape non-clé : bouton classique "Valider l'étape"
+  if (!isKey) {
+    return '<button class="bp" onclick="validerEtape()">Valider l\'étape →</button>';
+  }
+
+  // Étape clé : dépend du statut
+  var state = getStepState(CA, CS);
+  if (state.status === 'preparation') {
+    return '<button class="bp" onclick="finalizeStep()">Finaliser l\'étape (prête pour revue) →</button>';
+  }
+  if (state.status === 'finalized') {
+    if (isAdmin) {
+      return '<button class="bp" onclick="reviewStep()">Valider la revue →</button>'
+        + ' <button class="bs" style="font-size:11px" onclick="unfinalizeStep()">Renvoyer en préparation</button>';
+    }
+    return '<span style="font-size:11px;color:var(--amber);padding:6px 10px;background:var(--amber-lt);border-radius:6px">⏳ En attente de revue par l\'admin</span>';
+  }
+  if (state.status === 'reviewed') {
+    return '<button class="bp" onclick="validerEtape()">Étape suivante →</button>';
+  }
+  return '';
+}
+
+// Rafraîchit le bouton d'action (à appeler après toute modification)
+function refreshStepActionButton() {
+  var el = document.getElementById('step-actions');
+  if (el) {
+    el.innerHTML = '<button class="bs" onclick="exportAuditPDF(CA)" style="font-size:11px;">⬇ Export PDF</button> '
+      + getStepActionButtonHTML();
+  }
+}
+
+// Finaliser une étape (l'auditeur déclare l'étape prête pour revue)
+async function finalizeStep() {
+  var ap = AUDIT_PLAN.find(function(a){return a.id===CA;});
+  var d = getAudData(CA);
+  var missing = getMissingDocs(CS, d.docs);
+  if (missing.length) {
+    var msg = 'Document(s) requis :\n';
+    missing.forEach(function(m){msg += '  • '+m+'\n';});
+    alert(msg);
+    return;
+  }
+  var state = getStepState(CA, CS);
+  state.status = 'finalized';
+  state.finalizedBy = CU ? CU.name : '—';
+  state.finalizedAt = new Date().toISOString();
+  delete state.reviewedBy;
+  delete state.reviewedAt;
+  await saveAuditData(CA);
+  addHist('edit', 'Étape '+(CS+1)+' finalisée — '+(ap?ap.titre:''));
+  refreshStepActionButton();
+  document.getElementById('det-content').innerHTML = renderDetContent();
+  toast('Étape finalisée, en attente de revue ✓');
+}
+
+// Valider la revue d'une étape (admin seulement)
+async function reviewStep() {
+  if (!CU || CU.role!=='admin') { toast('Seul l\'admin peut valider la revue'); return; }
+  var ap = AUDIT_PLAN.find(function(a){return a.id===CA;});
+  var state = getStepState(CA, CS);
+  state.status = 'reviewed';
+  state.reviewedBy = CU.name;
+  state.reviewedAt = new Date().toISOString();
+  await saveAuditData(CA);
+
+  // Passer à l'étape suivante automatiquement
+  if (CS < 9) {
+    CS++;
+    if (ap) { ap.statut = 'En cours'; ap.step = CS; await saveAuditPlan(ap); }
+    addHist('edit', 'Étape '+CS+' revue & validée — '+(ap?ap.titre:''));
+    goStep(CS);
+    toast('Revue validée — passage à l\'étape suivante ✓');
+  } else {
+    if (ap) { ap.statut = 'Clôturé'; ap.step = 9; await saveAuditPlan(ap); }
+    refreshStepActionButton();
+    document.getElementById('det-content').innerHTML = renderDetContent();
+    toast('Mission clôturée ✓');
+  }
+}
+
+// Renvoyer l'étape en préparation (admin peut déverrouiller)
+async function unfinalizeStep() {
+  if (!CU || CU.role!=='admin') { toast('Seul l\'admin peut renvoyer en préparation'); return; }
+  var state = getStepState(CA, CS);
+  state.status = 'preparation';
+  delete state.finalizedBy;
+  delete state.finalizedAt;
+  await saveAuditData(CA);
+  addHist('edit', 'Étape '+(CS+1)+' renvoyée en préparation');
+  refreshStepActionButton();
+  document.getElementById('det-content').innerHTML = renderDetContent();
+  toast('Étape renvoyée en préparation ✓');
+}
+
+// Appelé automatiquement quand on modifie le contenu d'une étape finalisée
+// → repasse l'étape en "preparation"
+async function autoUnfinalizeIfNeeded() {
+  if (!isKeyStep(CS)) return;
+  var state = getStepState(CA, CS);
+  if (state.status === 'finalized') {
+    state.status = 'preparation';
+    delete state.finalizedBy;
+    delete state.finalizedAt;
+    await saveAuditData(CA);
+    refreshStepActionButton();
+    toast('Étape repassée en préparation (modifiée)');
+  }
+}
+
 async function validerEtape(){var ap=AUDIT_PLAN.find(function(a){return a.id===CA;});var d=getAudData(CA);var missing=getMissingDocs(CS,d.docs);if(missing.length){var msg='Document(s) requis :\n';missing.forEach(function(m){msg+='  • '+m+'\n';});alert(msg);return;}if(CS<9){CS++;if(ap){ap.statut='En cours';ap.step=CS;}await saveAuditPlan(ap);addHist('edit','Etape '+CS+' validée — '+(ap?ap.titre:''));goStep(CS);toast('"'+STEPS[CS].s+'" validée ✓');}else{if(ap){ap.statut='Clôturé';ap.step=9;await saveAuditPlan(ap);}toast('Mission clôturée ✓');}}
 function renderTaskList(st,a){if(!st.length)return'<div style="font-size:12px;color:var(--text-3);padding:.5rem">Aucune tâche.</div>';return st.map((t,i)=>`<div class="ti"><div class="tcb ${t.done?'done':''}" onclick="toggleTask(${i})">${t.done?'✓':''}</div><div class="tt ${t.done?'dt':''}">${t.desc}</div><select style="font-size:11px;padding:2px 6px;border-radius:20px;background:var(--bg)" onchange="reassignTask(${i},this.value)"><option value="none" ${!t.assignee||t.assignee==='none'?'selected':''}>—</option>${buildAssigneeOpts(a.assignedTo,t.assignee)}</select><span style="font-size:10px;color:${t.done?'var(--green)':t.assignee&&t.assignee!=='none'?'var(--purple)':'var(--text-3)'}">${t.done?'✓':t.assignee&&t.assignee!=='none'?'En cours':'À faire'}</span></div>`).join('');}
 async function toggleTask(i){const d=getAudData(CA);if(!d.tasks[CS])d.tasks[CS]=[];d.tasks[CS][i].done=!d.tasks[CS][i].done;await saveAuditData(CA);const a=getAudits().find(x=>x.id===CA);document.getElementById('task-list').innerHTML=renderTaskList(d.tasks[CS],a);document.getElementById('stepper-card').innerHTML=renderStepper();}
@@ -1690,7 +1884,123 @@ function showAddFindingModal(){openModal('Nouveau finding',`<div><label>Titre</l
 async function removeManualFinding(i){const d=getAudData(CA);d.findings.splice(i,1);await saveAuditData(CA);document.getElementById('det-content').innerHTML=renderDetContent();}
 async function setMgtResp(findingId,field,val){const d=getAudData(CA);const r=d.mgtResp.find(x=>x.findingId===findingId);if(r){r[field]=val;await saveAuditData(CA);}}
 function pushAllMgtResp(){const d=getAudData(CA);const ap=AUDIT_PLAN.find(a=>a.id===CA);const pushed=d.mgtResp.filter(r=>r.action&&r.owner&&!r.pushed);if(!pushed.length){toast('Aucune réponse complète à envoyer');return;}pushed.forEach(r=>{const step5c=d.controls[4]||[];const step6c=d.controls[5]||[];const allF=[...step6c.filter(c=>c.result==='fail'&&c.finding).map(c=>({id:'f_'+c.name,title:c.name})),...step5c.filter(c=>c.design==='target').map(c=>({id:'t_'+c.name,title:c.name})),...(d.findings||[]).map((f,i)=>({id:'m_'+i,title:f.title}))];const f=allF.find(x=>x.id===r.findingId);if(!f)return;ACTIONS.unshift({id:'ac'+Date.now()+Math.random(),title:r.action,audit:ap?.titre||'—',resp:CU?.name||'—',dept:r.owner,ent:ap?.type==='BU'?ap.entite:'Groupe',year:r.year,quarter:r.quarter,status:'Non démarré',pct:0,fromFinding:true,findingTitle:f.title});r.pushed=true;addHist('add',`Plan d'action créé depuis finding "${f.title}"`);});document.getElementById('det-content').innerHTML=renderDetContent();toast(pushed.length+' plan(s) d\'action créé(s) ✓');}
-async function addFakeDoc(){var inp=document.createElement('input');inp.type='file';inp.accept='.pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.csv,.txt';inp.multiple=true;inp.onchange=async function(){if(!inp.files.length)return;for(var fi=0;fi<inp.files.length;fi++){var file=inp.files[fi];toast('Upload : '+file.name+'...');try{await uploadDoc(CA,file,CS,CU?CU.name:'Inconnu');document.getElementById('det-content').innerHTML=renderDetContent();toast(file.name+' uploadé ✓');}catch(e){toast('Erreur : '+e.message);}}};inp.click();}
+async function addFakeDoc(){
+  // Étape 1 : sélection du fichier
+  var inp=document.createElement('input');
+  inp.type='file';
+  inp.accept='.pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.csv,.txt';
+  inp.multiple=true;
+  inp.onchange=async function(){
+    if(!inp.files.length) return;
+    var files = Array.from(inp.files);
+    // Étape 2 : demander preparer/reviewer dans une modal
+    showPrepReviewerModal(files);
+  };
+  inp.click();
+}
+
+function showPrepReviewerModal(files) {
+  // Liste des auditeurs de l'audit (pour preparer)
+  var ap = AUDIT_PLAN.find(function(a){ return a.id===CA; });
+  var auditors = (ap && ap.auditeurs) ? ap.auditeurs : [];
+  // Liste de tous les users pour reviewer (on privilégie admin)
+  var adminUsers = (USERS||[]).filter(function(u){return u.role==='admin' && u.status==='actif';});
+  var allUsers = (USERS||[]).filter(function(u){return u.status==='actif';});
+
+  // Default values
+  var defaultPreparer = '';
+  // Si l'utilisateur courant est dans les auditeurs, on le met par défaut
+  if (CU) {
+    var myId = Object.keys(TM).find(function(k){
+      return TM[k].name && CU.name && TM[k].name.indexOf(CU.name.split(' ')[0])>=0;
+    });
+    if (myId && auditors.indexOf(myId)>=0) defaultPreparer = myId;
+    else if (auditors.length) defaultPreparer = auditors[0];
+  }
+  var defaultReviewer = adminUsers.length ? adminUsers[0].id : '';
+
+  var fileNames = files.map(function(f){return '<li style="font-size:11px;color:var(--text-2)">'+f.name+'</li>';}).join('');
+  var prepOpts = auditors.map(function(id){
+    var m = TM[id];
+    return '<option value="'+id+'"'+(id===defaultPreparer?' selected':'')+'>'+((m&&m.name)||id)+'</option>';
+  }).join('');
+  var revOpts = allUsers.map(function(u){
+    return '<option value="'+u.id+'"'+(u.id===defaultReviewer?' selected':'')+'>'+u.name+(u.role==='admin'?' (admin)':'')+'</option>';
+  }).join('');
+
+  var bodyHtml =
+    '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">Documents à uploader :</div>'
+    + '<ul style="margin:0 0 14px 0;padding-left:20px">'+fileNames+'</ul>'
+    + '<div style="margin-bottom:10px"><label class="f-lbl">Préparateur <span style="color:var(--red)">*</span></label>'
+    + (auditors.length
+        ? '<select id="doc-preparer" class="f-inp" style="width:100%">'+prepOpts+'</select>'
+        : '<div style="font-size:11px;color:var(--amber);padding:6px 0">Aucun auditeur assigné à cet audit. Assignez-en un d\'abord.</div>')
+    + '</div>'
+    + '<div><label class="f-lbl">Reviewer <span style="color:var(--red)">*</span></label>'
+    + '<select id="doc-reviewer" class="f-inp" style="width:100%">'+revOpts+'</select>'
+    + '</div>';
+
+  openModal('Préparateur / Reviewer', bodyHtml, async function() {
+    var prepEl = document.getElementById('doc-preparer');
+    var revEl = document.getElementById('doc-reviewer');
+    var preparer = prepEl ? prepEl.value : '';
+    var reviewer = revEl ? revEl.value : '';
+    if (!preparer) { toast('Sélectionnez un préparateur'); return; }
+    if (!reviewer) { toast('Sélectionnez un reviewer'); return; }
+
+    // Upload de tous les fichiers
+    for (var fi=0; fi<files.length; fi++) {
+      var file = files[fi];
+      toast('Upload : '+file.name+'...');
+      try {
+        var docObj = await uploadDoc(CA, file, CS, CU?CU.name:'Inconnu');
+        // Ajouter preparer/reviewer au doc qui vient d'être créé
+        if (docObj) {
+          var d = getAudData(CA);
+          var last = d.docs[d.docs.length-1];
+          if (last && last.name===file.name) {
+            last.preparer = preparer;
+            last.reviewer = reviewer;
+            last.reviewStatus = 'pending';
+            await saveAuditData(CA);
+          }
+        }
+        toast(file.name+' uploadé ✓');
+      } catch(e) {
+        toast('Erreur : '+e.message);
+      }
+    }
+    document.getElementById('det-content').innerHTML = renderDetContent();
+  });
+}
+
+// Marquer un document comme revu (admin seulement)
+async function markDocReviewed(docIndex) {
+  if (!CU || CU.role!=='admin') { toast('Seul l\'admin peut valider'); return; }
+  var d = getAudData(CA);
+  var doc = d.docs[docIndex];
+  if (!doc) return;
+  doc.reviewStatus = 'reviewed';
+  doc.reviewedBy = CU.name;
+  doc.reviewedAt = new Date().toISOString();
+  await saveAuditData(CA);
+  addHist('edit', 'Document revu : '+doc.name);
+  document.getElementById('det-content').innerHTML = renderDetContent();
+  toast('Document marqué comme revu ✓');
+}
+
+async function unmarkDocReviewed(docIndex) {
+  if (!CU || CU.role!=='admin') { toast('Seul l\'admin peut modifier'); return; }
+  var d = getAudData(CA);
+  var doc = d.docs[docIndex];
+  if (!doc) return;
+  doc.reviewStatus = 'pending';
+  delete doc.reviewedBy;
+  delete doc.reviewedAt;
+  await saveAuditData(CA);
+  document.getElementById('det-content').innerHTML = renderDetContent();
+  toast('Revue annulée');
+}
 async function renameDoc(docIndex){var d=getAudData(CA);var doc=d.docs[docIndex];if(!doc)return;var newName=prompt('Nouveau nom :', doc.name);if(!newName||newName.trim()===''||newName===doc.name)return;try{await renameDocInDB(CA,docIndex,newName.trim());document.getElementById('det-content').innerHTML=renderDetContent();toast('Renommé ✓');}catch(e){toast('Erreur : '+e.message);}}
 async function replaceDoc(docIndex){var inp=document.createElement('input');inp.type='file';inp.accept='.pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.csv,.txt';inp.onchange=async function(){if(!inp.files.length)return;var file=inp.files[0];toast('Remplacement...');try{await replaceDocInDB(CA,docIndex,file,CS,CU?CU.name:'Inconnu');document.getElementById('det-content').innerHTML=renderDetContent();toast(file.name+' remplacé ✓');}catch(e){toast('Erreur : '+e.message);}};inp.click();}
 async function saveNotes(){var d=getAudData(CA);d.notes=document.querySelector('textarea')?document.querySelector('textarea').value:'';await saveAuditData(CA);toast('Notes sauvegardées ✓');}
@@ -1701,7 +2011,66 @@ async function saveMaturity(){const d=getAudData(CA);if(!d.maturity?.level){toas
 function buildControlList(ctrls){if(!ctrls||!ctrls.length)return'<div style="font-size:12px;color:var(--text-3);padding:.5rem">Aucun contrôle identifié.</div>';var h='<div class="ch"><span>Contrôle</span><span>Owner</span><span>Fréquence</span><span>Clef ?</span><span>Design</span><span></span></div>';ctrls.forEach(function(ctrl,ci){h+='<div class="cr"><span style="font-weight:500">'+ctrl.name+'</span><span style="color:var(--text-2)">'+ctrl.owner+'</span><span style="color:var(--text-2)">'+ctrl.freq+'</span><span><span class="badge '+(ctrl.clef?'bps':'bpl')+'">'+(ctrl.clef?'Oui':'Non')+'</span></span><span><span class="badge '+(ctrl.design==='existing'?'bdn':'btg')+'">'+(ctrl.design==='existing'?'Existing':'Target')+'</span></span><button class="bd" style="font-size:10px;padding:2px 6px" onclick="removeControl('+ci+')">X</button></div>';});return h;}
 function buildTargetList(targets){if(!targets||!targets.length)return'<div style="font-size:12px;color:var(--text-3);padding:.5rem">Aucun contrôle target.</div>';return targets.map(function(ctrl){return'<div class="fr"><div class="fh"><span class="badge btg">Target</span><div class="ft">'+ctrl.name+'</div></div><div style="font-size:11px;color:var(--red)">Contrôle non existant — à définir par '+ctrl.owner+'.</div></div>';}).join('');}
 function buildExecTable(kc){let h='<div class="tw"><table><thead><tr><th>Contrôle</th><th>Nature du test</th><th>Résultat</th><th>Finding</th><th>Action</th></tr></thead><tbody>';kc.forEach(function(ctrl,i){const dis=ctrl.finalized?'disabled':'';h+='<tr><td style="font-size:11px;font-weight:500">'+ctrl.name+'</td><td><select onchange="setTestNature('+i+',this.value)" '+dis+' style="font-size:11px"><option value="">-- Nature --</option><option value="Instruction" '+(ctrl.testNature==='Instruction'?'selected':'')+'>Instruction</option><option value="Observation" '+(ctrl.testNature==='Observation'?'selected':'')+'>Observation</option><option value="Re-performance" '+(ctrl.testNature==='Re-performance'?'selected':'')+'>Re-performance</option></select></td><td><select onchange="setTestResult('+i+',this.value)" '+dis+' style="font-size:11px"><option value="">-- Résultat --</option><option value="pass" '+(ctrl.result==='pass'?'selected':'')+'>Pass</option><option value="fail" '+(ctrl.result==='fail'?'selected':'')+'>Fail</option></select></td><td>'+(ctrl.result==='fail'?'<textarea onchange="setFinding('+i+',this.value)" placeholder="Documentez..." '+dis+' style="width:100%;font-size:10px;min-height:40px">'+(ctrl.finding||'')+'</textarea>':'<span style="color:var(--text-3)">-</span>')+'</td><td>'+(ctrl.finalized?'<span class="badge bdn">Finalisé</span>':'<button class="bp" style="font-size:10px;padding:4px 8px" onclick="finalizeTest('+i+')">Finaliser</button>')+'</td></tr>';});return h+'</tbody></table></div>';}
-function buildDocList(docs){if(!docs||!docs.length)return'';return docs.map(function(f,fi){var link=f.url?'<a href="'+f.url+'" target="_blank" rel="noopener" style="color:#534AB7;text-decoration:none;font-weight:500">'+f.name+'</a>':'<span style="font-weight:500">'+f.name+'</span>';var meta=[];if(f.uploadedBy)meta.push(f.uploadedBy);if(f.uploadedAt)meta.push(new Date(f.uploadedAt).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}));if(f.step!==undefined&&f.step!==null&&STEPS[f.step])meta.push('Etape '+(f.step+1)+' — '+STEPS[f.step].s);var metaHtml=meta.length?'<div style="font-size:10px;color:#888;padding-left:18px;margin-top:2px">'+meta.join(' · ')+'</div>':'';var delFn="deleteDoc(CA,'"+(f.path||'').replace(/'/g,"\\'")+"','"+(f.name||'').replace(/'/g,"\\'")+'\')';return'<div style="background:#f8f8f8;border-radius:6px;padding:8px 10px;margin-bottom:6px;border:.5px solid #e0e0e0"><div style="display:flex;align-items:center;gap:6px"><span style="color:#534AB7">&#9646;</span><span style="flex:1;font-size:12px">'+link+'</span><span style="font-size:10px;color:#aaa;flex-shrink:0">'+(f.size||'')+'</span><button class="bs" style="font-size:10px;padding:2px 7px" onclick="renameDoc('+fi+')">Renommer</button><button class="bs" style="font-size:10px;padding:2px 7px" onclick="replaceDoc('+fi+')">Remplacer</button><button class="bd" style="font-size:10px;padding:2px 7px" onclick="'+delFn+'">Supprimer</button></div>'+metaHtml+'</div>';}).join('');}
+function buildDocList(docs){
+  if(!docs||!docs.length) return '';
+  var isAdmin = CU && CU.role==='admin';
+  return docs.map(function(f,fi){
+    var link = f.url
+      ? '<a href="'+f.url+'" target="_blank" rel="noopener" style="color:#534AB7;text-decoration:none;font-weight:500">'+f.name+'</a>'
+      : '<span style="font-weight:500">'+f.name+'</span>';
+
+    // Statut de revue
+    var reviewStatus = f.reviewStatus || 'pending'; // 'pending' ou 'reviewed'
+    var statusBadge = reviewStatus==='reviewed'
+      ? '<span class="badge bdn" style="font-size:10px">✓ Revu</span>'
+      : '<span class="badge bpl" style="font-size:10px">À revoir</span>';
+
+    // Preparer / Reviewer
+    var preparerName = f.preparer ? (TM[f.preparer] ? TM[f.preparer].name : f.preparer) : (f.uploadedBy || '—');
+    var reviewerName = f.reviewer ? (TM[f.reviewer] ? TM[f.reviewer].name : f.reviewer) : '—';
+
+    // Meta line 1 : preparer / reviewer
+    var reviewMeta = '<div style="font-size:10px;color:#666;padding-left:18px;margin-top:3px">'
+      + '<strong>Préparé par :</strong> '+preparerName
+      + ' · <strong>Reviewer :</strong> '+reviewerName;
+    if (reviewStatus==='reviewed' && f.reviewedBy) {
+      reviewMeta += ' · <span style="color:var(--green)">Revu par '+f.reviewedBy+(f.reviewedAt?' le '+new Date(f.reviewedAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):'')+'</span>';
+    }
+    reviewMeta += '</div>';
+
+    // Meta line 2 : upload info + étape
+    var meta=[];
+    if(f.uploadedBy) meta.push('Uploadé par '+f.uploadedBy);
+    if(f.uploadedAt) meta.push(new Date(f.uploadedAt).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}));
+    if(f.step!==undefined&&f.step!==null&&STEPS[f.step]) meta.push('Etape '+(f.step+1)+' — '+STEPS[f.step].s);
+    var metaHtml = meta.length ? '<div style="font-size:10px;color:#888;padding-left:18px;margin-top:2px">'+meta.join(' · ')+'</div>' : '';
+
+    var delFn = "deleteDoc(CA,'"+(f.itemId||f.path||'').replace(/'/g,"\\'")+"','"+(f.name||'').replace(/'/g,"\\'")+'\')';
+
+    // Boutons action : bouton "Marquer revu" seulement pour admin si pas déjà revu
+    var reviewBtn = '';
+    if (isAdmin && reviewStatus!=='reviewed') {
+      reviewBtn = '<button class="bp" style="font-size:10px;padding:2px 7px" onclick="markDocReviewed('+fi+')">Marquer comme revu</button>';
+    } else if (isAdmin && reviewStatus==='reviewed') {
+      reviewBtn = '<button class="bs" style="font-size:10px;padding:2px 7px" onclick="unmarkDocReviewed('+fi+')">Annuler revue</button>';
+    }
+
+    return '<div style="background:#f8f8f8;border-radius:6px;padding:8px 10px;margin-bottom:6px;border:.5px solid #e0e0e0">'
+      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+        + '<span style="color:#534AB7">&#9646;</span>'
+        + '<span style="flex:1;font-size:12px;min-width:200px">'+link+'</span>'
+        + statusBadge
+        + '<span style="font-size:10px;color:#aaa;flex-shrink:0">'+(f.size||'')+'</span>'
+        + reviewBtn
+        + '<button class="bs" style="font-size:10px;padding:2px 7px" onclick="renameDoc('+fi+')">Renommer</button>'
+        + '<button class="bs" style="font-size:10px;padding:2px 7px" onclick="replaceDoc('+fi+')">Remplacer</button>'
+        + '<button class="bd" style="font-size:10px;padding:2px 7px" onclick="'+delFn+'">Supprimer</button>'
+      + '</div>'
+      + reviewMeta
+      + metaHtml
+      + '</div>';
+  }).join('');
+}
 function buildAssigneeOpts(assigned,current){return(assigned||[]).map(function(id){return'<option value="'+id+'"'+(current===id?' selected':'')+'>'+((TM[id]&&TM[id].name)||id)+'</option>';}).join('');}
 function buildTplCards(names,badgeCls){return names.map(function(n){return'<div class="card" style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between"><div style="font-size:12px;font-weight:500">'+n+'</div><span class="badge '+badgeCls+'">'+(badgeCls==='bpc'?'Process':'BU')+'</span></div><div style="font-size:11px;color:var(--text-2)">3 phases · 11 étapes</div><button class="bs" style="width:100%">Utiliser</button></div>';}).join('');}
 
