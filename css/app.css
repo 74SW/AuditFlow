@@ -384,6 +384,43 @@ tbody tr:hover td{background:#FAFAFE;}
 .mb{display:flex;flex-direction:column;gap:10px;}
 .mb label{font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:1px;display:block;}
 .mb input,.mb select,.mb textarea{width:100%;}
+
+/* Exception : liste de checkboxes dans la modal (#m-proc-list et auditeurs) */
+.mb #m-proc-list label,
+.mb .cb-list label{
+  display:flex !important;
+  flex-direction:row !important;
+  align-items:center !important;
+  gap:8px !important;
+  width:auto !important;
+  margin:0 !important;
+  padding:4px 6px !important;
+  font-size:12px !important;
+  font-weight:400 !important;
+  color:var(--text) !important;
+  cursor:pointer;
+  border-radius:4px;
+  transition:background .1s;
+}
+.mb #m-proc-list label:hover,
+.mb .cb-list label:hover{
+  background:var(--bg);
+}
+.mb #m-proc-list input[type="checkbox"],
+.mb .cb-list input[type="checkbox"]{
+  width:14px !important;
+  height:14px !important;
+  margin:0 !important;
+  flex-shrink:0;
+  cursor:pointer;
+}
+.mb #m-proc-list span,
+.mb .cb-list span{
+  flex:1;
+  text-align:left;
+  font-size:12px;
+  color:var(--text);
+}
 .mf{display:flex;justify-content:flex-end;gap:8px;margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border);}
 
 /* ── TOAST ──────────────────────────────────────────────── */
