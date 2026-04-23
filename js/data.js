@@ -12,17 +12,20 @@ const KEY_STEPS = [2, 4, 5, 6, 8]; // Kick Off, Testing Strategy, Testings, Repo
 // Catégories par défaut pour les missions "Other" (non-audit)
 // Les utilisateurs peuvent en ajouter de nouvelles à la volée dans le formulaire
 var OTHER_CATEGORIES_DEFAULT = [
-  'Sapin 2 - Cartographie',
-  'URD - Facteurs de risques',
-  'Comité d\'audit',
-  'Formation / Conférence',
-  'Revue du plan d\'audit',
-  'Autre',
+  'Reporting Comité Audit',
+  'Compliance',
+  'Risk Management',
+  'Autre mission',
 ];
 
 // Couleurs par catégorie (pour les badges et le Gantt)
 // Si une catégorie n'est pas listée, couleur par défaut "orange"
 var OTHER_CATEGORY_COLORS = {
+  'Reporting Comité Audit':     {bg:'#E0E7FF', color:'#3730A3', gantt:'#6366F1'},
+  'Compliance':                 {bg:'#FEF3C7', color:'#854F0B', gantt:'#F59E0B'},
+  'Risk Management':            {bg:'#DBEAFE', color:'#1E40AF', gantt:'#3B82F6'},
+  'Autre mission':              {bg:'#F3F4F6', color:'#374151', gantt:'#6B7280'},
+  // Anciennes catégories conservées pour compat (si déjà utilisées)
   'Sapin 2 - Cartographie':     {bg:'#FEF3C7', color:'#854F0B', gantt:'#F59E0B'},
   'URD - Facteurs de risques':  {bg:'#DBEAFE', color:'#1E40AF', gantt:'#3B82F6'},
   'Comité d\'audit':             {bg:'#E0E7FF', color:'#3730A3', gantt:'#6366F1'},
