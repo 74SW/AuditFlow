@@ -50,48 +50,114 @@ function getProcRisks(procId){
   return(p&&p.risks)||[];
 }
 
-// ── Modale risques d'un processus ────────────────────────────────────────────
+// ── Modale d'association risques ↔ processus (Risk Universe) ────────
 function showProcRisksModal(procId){
   var proc=PROCESSES.find(function(p){return p.id===procId;});
   if(!proc){toast('Processus introuvable');return;}
-  var risks=proc.risks||[];
 
-  function buildRiskRows(){
-    if(!risks.length) return '<div style="font-size:12px;color:var(--text-3);padding:.5rem 0">Aucun risque défini.</div>';
-    return risks.map(function(r,ri){
-      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">'
-        +'<div style="flex:1;font-size:12px;font-weight:500;">'+r.label+'</div>'
-        +riskBadge(r.probability,r.impact)
-        +(CU&&CU.role==='admin'?'<button class="bd" style="font-size:10px;padding:2px 6px" onclick="removeProcRisk(\''+procId+'\','+ri+')">×</button>':'')
-        +'</div>';
-    }).join('');
+  var groupRisks = (RISK_UNIVERSE||[]).filter(function(r){return r.level==='group';});
+  groupRisks.sort(function(a,b){return (a.title||'').localeCompare(b.title||'','fr',{sensitivity:'base'});});
+
+  var currentRefs = proc.riskRefs || [];
+
+  if (!groupRisks.length) {
+    openModal('Risques associés — '+proc.proc,
+      '<div style="font-size:12px;color:var(--text-3);padding:1rem;text-align:center;background:var(--bg);border-radius:6px">'
+      + '<div style="font-size:28px;margin-bottom:6px">△</div>'
+      + '<div style="margin-bottom:4px;font-weight:500">Aucun risque dans le Risk Universe</div>'
+      + '<div>Créez d\'abord des risques Groupe (URD) dans l\'onglet <strong>Risk Universe</strong> pour pouvoir les associer.</div>'
+      + '</div>',
+      function(){});
+    return;
   }
 
-  function buildModal(){
-    var body='<div style="margin-bottom:1rem"><div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:.5rem">Risques du processus : <strong>'+proc.proc+'</strong></div>'
-      +'<div id="proc-risk-list">'+buildRiskRows()+'</div></div>'
-      +(CU&&CU.role==='admin'
-        ?'<div style="border-top:1px solid var(--border);padding-top:.875rem;margin-top:.5rem">'
-          +'<div style="font-size:12px;font-weight:600;margin-bottom:.625rem">Ajouter un risque</div>'
-          +'<div><label>Description du risque <span style="color:var(--red)">*</span></label>'
-          +'<input id="nr-label" placeholder="ex : Fraude fournisseur, Erreur de rapprochement..."/></div>'
-          +'<div class="g2">'
-          +'<div><label>Probabilité (1-4)</label>'
-          +'<select id="nr-prob"><option value="1">1 — Rare</option><option value="2">2 — Peu probable</option><option value="3">3 — Probable</option><option value="4">4 — Quasi-certain</option></select></div>'
-          +'<div><label>Impact (1-4)</label>'
-          +'<select id="nr-imp"><option value="1">1 — Mineur</option><option value="2">2 — Modéré</option><option value="3">3 — Majeur</option><option value="4">4 — Critique</option></select></div>'
-          +'</div>'
-          +'<button class="bp" style="width:100%;margin-top:8px" onclick="addProcRisk(\''+procId+'\')">+ Ajouter ce risque</button>'
-          +'</div>'
-        :'');
-    return body;
-  }
+  var isAdmin = CU && CU.role === 'admin';
 
-  openModal('Risques — '+proc.proc, buildModal(), function(){});
-  // Masquer le bouton Confirmer (on confirme via le bouton Ajouter)
-  setTimeout(function(){var mok=document.getElementById('mok');if(mok)mok.style.display='none';},50);
+  var body = '<div style="font-size:11px;color:var(--text-3);margin-bottom:10px">Cochez les risques URD qui s\'appliquent à <strong style="color:var(--text)">'+proc.proc+'</strong>. Le niveau de risque du process sera le plus élevé parmi les risques cochés.</div>';
+  body += '<div class="cb-list" style="display:flex;flex-direction:column;gap:4px;max-height:350px;overflow-y:auto;border:.5px solid var(--border);border-radius:var(--radius);padding:8px 10px;background:var(--bg-card)">';
+  groupRisks.forEach(function(gr){
+    var colors = (typeof RISK_IMPACT_COLORS!=='undefined' && RISK_IMPACT_COLORS[gr.impact]) ? RISK_IMPACT_COLORS[gr.impact] : {bg:'#F3F4F6',color:'#374151'};
+    var checked = currentRefs.indexOf(gr.id)>=0 ? ' checked' : '';
+    var typeBadges = (gr.impactTypes||[]).map(function(t){return '<span class="badge bpl" style="font-size:8px;padding:1px 5px">'+t+'</span>';}).join(' ');
+    var disabled = !isAdmin ? ' disabled' : '';
+    body += '<label style="align-items:flex-start !important"><input type="checkbox" class="pr-risk-cb" value="'+gr.id+'"'+checked+disabled+'><span style="flex:1">';
+    body += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><strong>'+gr.title+'</strong>';
+    if (gr.impact) body += '<span class="badge" style="background:'+colors.bg+';color:'+colors.color+';font-size:9px">'+gr.impact+'</span>';
+    if (gr.probability) body += '<span class="badge bpl" style="font-size:9px">'+gr.probability+'</span>';
+    body += '</div>';
+    if (gr.description) body += '<div style="font-size:10px;color:var(--text-3);margin-top:2px">'+gr.description+'</div>';
+    if (typeBadges) body += '<div style="margin-top:3px">'+typeBadges+'</div>';
+    body += '</span></label>';
+  });
+  body += '</div>';
+  body += '<div id="pr-summary" style="font-size:11px;margin-top:10px;color:var(--purple-dk);font-weight:500"></div>';
+
+  openModal('Risques associés — '+proc.proc, body, async function(){
+    if (!isAdmin) return;
+    var newRefs = [];
+    document.querySelectorAll('.pr-risk-cb:checked').forEach(function(cb){ newRefs.push(cb.value); });
+    proc.riskRefs = newRefs;
+    // Recalculer le niveau de risque à partir des impacts des risques associés
+    proc.riskLevel = computeProcRiskLevelFromRefs(newRefs);
+    proc.risk = riskLevelToNum(proc.riskLevel);
+    // Sauvegarder (avec risk_refs_json et les champs recalculés)
+    await spUpsert('AF_Processes', proc.id, {
+      dom: proc.dom, proc: proc.proc,
+      risk: proc.risk, risk_level: proc.riskLevel,
+      archived: proc.archived||false,
+      risks_json: JSON.stringify(proc.risks||[]),
+      risk_refs_json: JSON.stringify(newRefs),
+      Title: proc.proc,
+    });
+    addHist('edit', newRefs.length+' risque(s) associé(s) à "'+proc.proc+'"');
+    renderProcTable();
+    toast('Risques associés ✓');
+  });
+
+  // Mise à jour du résumé en temps réel
+  setTimeout(function(){
+    var update = function(){
+      var checkedVals = [];
+      document.querySelectorAll('.pr-risk-cb:checked').forEach(function(cb){ checkedVals.push(cb.value); });
+      var level = computeProcRiskLevelFromRefs(checkedVals);
+      var summary = document.getElementById('pr-summary');
+      if (summary) {
+        if (checkedVals.length === 0) {
+          summary.innerHTML = '<span style="color:var(--text-3);font-style:italic">Aucun risque associé — le niveau sera "—"</span>';
+        } else {
+          summary.innerHTML = checkedVals.length+' risque(s) associé(s) · Niveau calculé : <strong>'+level+'</strong>';
+        }
+      }
+    };
+    update();
+    document.querySelectorAll('.pr-risk-cb').forEach(function(cb){ cb.addEventListener('change', update); });
+  }, 50);
 }
 
+// Helper : calcule le niveau du process à partir des IDs de risques URD associés
+// Retourne 'faible', 'modéré', 'élevé' ou 'critique'
+// Basé sur le max des impacts des risques sélectionnés
+function computeProcRiskLevelFromRefs(riskIds) {
+  if (!riskIds || !riskIds.length) return 'faible';
+  // Mapping Impact -> ordre (pour calculer le max)
+  var impactOrder = {'Minor':1, 'Limited':2, 'Major':3, 'Severe':4};
+  var impactToLevel = {'Minor':'faible', 'Limited':'modéré', 'Major':'élevé', 'Severe':'critique'};
+  var maxOrder = 0;
+  var maxImpact = 'Minor';
+  riskIds.forEach(function(rid){
+    var r = (RISK_UNIVERSE||[]).find(function(x){return x.id===rid;});
+    if (!r) return;
+    var ord = impactOrder[r.impact] || 0;
+    if (ord > maxOrder) { maxOrder = ord; maxImpact = r.impact; }
+  });
+  return impactToLevel[maxImpact] || 'faible';
+}
+
+function riskLevelToNum(level) {
+  return {'faible':1, 'modéré':2, 'élevé':3, 'critique':4}[level] || 1;
+}
+
+// ── Anciennes fonctions (conservées pour compat mais plus appelées dans l'UI) ──
 async function addProcRisk(procId){
   var label=document.getElementById('nr-label').value.trim();
   if(!label){toast('Description obligatoire');return;}
@@ -101,40 +167,16 @@ async function addProcRisk(procId){
   if(!proc){toast('Processus introuvable');return;}
   if(!proc.risks)proc.risks=[];
   proc.risks.push({id:'r'+Date.now(),label:label,probability:prob,impact:imp});
-  // Sauvegarder en base
   await spUpsert('AF_Processes',proc.id,{dom:proc.dom,proc:proc.proc,risk:proc.risk,risk_level:proc.riskLevel||'faible',archived:proc.archived||false,risks_json:JSON.stringify(proc.risks),Title:proc.proc});
-  document.getElementById('nr-label').value='';
-  document.getElementById('proc-risk-list').innerHTML=(function(){
-    var risks=proc.risks;
-    if(!risks.length) return '<div style="font-size:12px;color:var(--text-3);padding:.5rem 0">Aucun risque défini.</div>';
-    return risks.map(function(r,ri){
-      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">'
-        +'<div style="flex:1;font-size:12px;font-weight:500;">'+r.label+'</div>'
-        +riskBadge(r.probability,r.impact)
-        +'<button class="bd" style="font-size:10px;padding:2px 6px" onclick="removeProcRisk(\''+procId+'\','+ri+')">×</button>'
-        +'</div>';
-    }).join('');
-  })();
   toast('Risque ajouté ✓');
 }
 
 async function removeProcRisk(procId,ri){
+  // Conservée pour compat (plus appelée depuis l'UI)
   var proc=PROCESSES.find(function(p){return p.id===procId;});
   if(!proc||!proc.risks)return;
   proc.risks.splice(ri,1);
   await spUpsert('AF_Processes',proc.id,{dom:proc.dom,proc:proc.proc,risk:proc.risk,risk_level:proc.riskLevel||'faible',archived:proc.archived||false,risks_json:JSON.stringify(proc.risks),Title:proc.proc});
-  // Rafraîchir la liste dans la modale
-  document.getElementById('proc-risk-list').innerHTML=(function(){
-    var risks=proc.risks;
-    if(!risks.length) return '<div style="font-size:12px;color:var(--text-3);padding:.5rem 0">Aucun risque défini.</div>';
-    return risks.map(function(r,ri2){
-      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">'
-        +'<div style="flex:1;font-size:12px;font-weight:500;">'+r.label+'</div>'
-        +riskBadge(r.probability,r.impact)
-        +'<button class="bd" style="font-size:10px;padding:2px 6px" onclick="removeProcRisk(\''+procId+'\','+ri2+')">×</button>'
-        +'</div>';
-    }).join('');
-  })();
   toast('Risque supprimé ✓');
 }
 
@@ -147,20 +189,37 @@ function renderRiskMatrix(){
   if(!d.riskLinks)d.riskLinks={};  // {riskId: [controlId, ...]}
   if(!d.auditRisks)d.auditRisks=[]; // risques spécifiques à cet audit
 
-  // Risques des processus associés (prédéfinis) — gère multi-processus
+  // Risques des processus associés — récupérés depuis le Risk Universe
+  // via les riskRefs du process (nouveau système) — gère multi-processus
   var pids = (Array.isArray(ap&&ap.processIds) && ap.processIds.length)
     ? ap.processIds
     : (ap && ap.processId ? [ap.processId] : []);
   var procRisks = [];
+  var seenRiskIds = {}; // dédoublonner si plusieurs process référencent le même risque URD
   pids.forEach(function(pid){
     var procObj = PROCESSES.find(function(p){return p.id===pid;});
-    var procName = procObj ? procObj.proc : '';
-    (getProcRisks(pid)||[]).forEach(function(r){
-      // Préfixer le nom du risque par le processus source (utile en cross-process)
-      procRisks.push(Object.assign({}, r, {
-        _procName: procName,
-        title: (pids.length>1 && procName) ? ('['+procName+'] '+r.title) : r.title,
-      }));
+    if (!procObj) return;
+    var procName = procObj.proc;
+    var refs = procObj.riskRefs || [];
+    refs.forEach(function(riskId){
+      if (seenRiskIds[riskId]) return;
+      seenRiskIds[riskId] = true;
+      var r = (RISK_UNIVERSE||[]).find(function(x){return x.id===riskId;});
+      if (!r) return;
+      // Mapper Impact/Proba textuels en valeurs numériques (compat matrice existante)
+      var probToNum = {'Rare':1,'Unlikely':2,'Possible':3,'Certain':4};
+      var impToNum  = {'Minor':1,'Limited':2,'Major':3,'Severe':4};
+      procRisks.push({
+        id: r.id,
+        title: r.title,
+        description: r.description || '',
+        label: r.title, // compat avec ancien champ "label"
+        probability: probToNum[r.probability] || 1,
+        impact: impToNum[r.impact] || 1,
+        impactTypes: r.impactTypes || [],
+        _fromProc: procName,
+        _fromRiskUniverse: true,
+      });
     });
   });
 
@@ -728,24 +787,23 @@ function renderProcTable(){
 
       rows.forEach(function(p){
         var idx=PROCESSES.indexOf(p);
-        // Sélecteur de risque (admin) ou badge (lecture)
-        var riskCell;
-        if(CU&&CU.role==='admin'){
-          riskCell='<select style="font-size:11px;padding:3px 7px;border:.5px solid var(--border-md);border-radius:var(--radius);background:var(--bg-card)" onchange="editRiskLevel('+idx+',this.value)">'
-            +RISK_LEVELS.map(function(r){return'<option value="'+r.key+'"'+(p.riskLevel===r.key?' selected':'')+'>'+r.label+'</option>';}).join('')
-            +'</select>';
-        } else {
-          riskCell=riskLabel(p.riskLevel||'faible');
-        }
-        var riskCount=(p.risks||[]).length;
-        var riskCountBadge=riskCount?'<span class="badge bpc" style="font-size:9px;margin-left:4px">'+riskCount+' risque'+(riskCount>1?'s':'')+'</span>':'';
+        // Niveau de risque : toujours calculé auto depuis riskRefs (lecture seule)
+        var effectiveLevel = (p.riskRefs && p.riskRefs.length)
+          ? computeProcRiskLevelFromRefs(p.riskRefs)
+          : (p.riskLevel || 'faible');
+        var riskCell = riskLabel(effectiveLevel);
+        // Compteur de risques associés (Risk Universe)
+        var refCount = (p.riskRefs||[]).length;
+        var refCountBadge = refCount
+          ? '<span class="badge bpc" style="font-size:9px;margin-left:4px">'+refCount+'</span>'
+          : '<span class="badge bpl" style="font-size:9px;margin-left:4px">0</span>';
         var adminCell=CU&&CU.role==='admin'
           ?'<td style="white-space:nowrap">'
-            +'<button class="bs" style="font-size:10px;padding:2px 7px" onclick="showProcRisksModal(\''+p.id+'\')">⚠ Risques'+riskCountBadge+'</button> '
+            +'<button class="bs" style="font-size:10px;padding:2px 7px" onclick="showProcRisksModal(\''+p.id+'\')">⚠ Risques'+refCountBadge+'</button> '
             +'<button class="bs" style="font-size:10px;padding:2px 7px" onclick="showEditProcModal('+idx+')">Modifier</button> '
             +'<button class="bd" style="font-size:10px;padding:2px 7px" onclick="archiveProc('+idx+')">Archiver</button>'
             +'</td>'
-          :'<td><button class="bs" style="font-size:10px;padding:2px 7px" onclick="showProcRisksModal(\''+p.id+'\')">⚠ Risques'+riskCountBadge+'</button></td>';
+          :'<td><button class="bs" style="font-size:10px;padding:2px 7px" onclick="showProcRisksModal(\''+p.id+'\')">⚠ Risques'+refCountBadge+'</button></td>';
         h+='<tr>';
         h+='<td style="font-size:11px;color:var(--text-2)">'+dom+'</td>';
         h+='<td style="font-weight:500;font-size:12px">'+p.proc+'</td>';
@@ -1663,10 +1721,13 @@ function renderPlanProcessTable(){
       var covBadge=covered
         ?'<span class="badge bdn" style="font-size:10px;">✓ Audité</span>'
         :'<span class="badge bpl" style="font-size:10px;">Non audité</span>';
+      var effLvl = (p.riskRefs && p.riskRefs.length)
+        ? computeProcRiskLevelFromRefs(p.riskRefs)
+        : (p.riskLevel||'faible');
       h+='<tr>'
         +'<td style="font-size:11px;color:var(--text-2)">'+dom+'</td>'
         +'<td style="font-weight:500;font-size:11px">'+p.proc+'</td>'
-        +'<td>'+riskLabel(p.riskLevel||'faible')+'</td>'
+        +'<td>'+riskLabel(effLvl)+'</td>'
         +'<td>'+covBadge+'</td>'
         +'<td>'+yc(2025)+'</td><td>'+yc(2026)+'</td><td>'+yc(2027)+'</td><td>'+yc(2028)+'</td>'
         +'</tr>';
