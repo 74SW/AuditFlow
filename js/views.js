@@ -3185,19 +3185,19 @@ function renderDetContent(){
 
   // ── 3. SECTIONS SPÉCIFIQUES MÉTIER selon l'étape ─────────
   if (CS === 4) {
-    // WCGW + Contrôles (Phase 3 - à venir)
+    // Étape 5 (index 4) : WCGW / Contrôles / Test Strategy
     html += renderRiskSection();
     html += renderWCGWSection();
     html += renderControlsSection();
   } else if (CS === 5) {
-    // Tests des contrôles (Phase 4 - à venir)
+    // Étape 6 (index 5) : Testings — tests des contrôles uniquement
     html += renderTestsSection();
   } else if (CS === 6) {
-    // Findings + Maturity (Phase 4 - à venir)
+    // Étape 7 (index 6) : Report — Findings + Maturity (consolidation)
     html += renderFindingsSection();
     html += renderMaturitySection();
   } else if (CS === 8) {
-    // Mgt Responses (Phase 4 - à venir)
+    // Étape 9 (index 8) : Management Responses
     html += renderMgtRespSection();
   }
 
