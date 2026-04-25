@@ -3414,8 +3414,284 @@ function renderRiskSection() {
   return html;
 }
 
-function renderWCGWSection() { return '<div class="card" style="margin-bottom:.75rem"><div style="font-size:12px;font-weight:600;color:var(--text-2)">WCGW <span style="font-size:10px;font-weight:400;color:var(--text-3)">(à venir Phase 3)</span></div></div>'; }
-function renderControlsSection() { return '<div class="card" style="margin-bottom:.75rem"><div style="font-size:12px;font-weight:600;color:var(--text-2)">Contrôles <span style="font-size:10px;font-weight:400;color:var(--text-3)">(à venir Phase 3)</span></div></div>'; }
+// ─── ÉTAPE 5 : WCGW (What Could Go Wrong) ─────────────────────
+function renderWCGWSection() {
+  var d = getAudData(CA);
+  if (!d.wcgw) d.wcgw = {};
+  // d.wcgw[CS] = [{id, code, title, description, riskIds:[]}]
+  var wcgwList = d.wcgw[CS] || [];
+  var ctrls = (d.controls && d.controls[CS]) || [];
+
+  var html = '<div class="card" style="margin-bottom:.75rem">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+  html += '<div style="font-size:12px;font-weight:600;color:var(--text-2)">WCGW — What Could Go Wrong <span style="font-size:10px;font-weight:400;color:var(--text-3)">('+wcgwList.length+')</span></div>';
+  html += '<button class="bs" style="font-size:11px;padding:3px 9px" onclick="showAddWCGWModal()">+ Ajouter un WCGW</button>';
+  html += '</div>';
+  html += '<div style="font-size:10px;color:var(--text-3);margin-bottom:8px;font-style:italic">Scénarios dans lesquels les risques peuvent se matérialiser. Liez chaque WCGW à un ou plusieurs risques URD du processus.</div>';
+
+  if (!wcgwList.length) {
+    html += '<div style="font-size:11px;color:var(--text-3);font-style:italic;padding:.5rem">Aucun WCGW défini. Cliquez sur "+ Ajouter un WCGW".</div>';
+  } else {
+    wcgwList.forEach(function(w, idx){
+      var linkedRisks = (w.riskIds||[]).map(function(rid){
+        var r = (RISK_UNIVERSE||[]).find(function(x){return x.id===rid;});
+        return r ? r.title : '';
+      }).filter(Boolean);
+      var blockedBy = ctrls.filter(function(c){return c.wcgwId === w.id;}).length;
+      html += '<div style="border-top:.5px solid var(--border);padding:8px 0">';
+      html += '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:4px">';
+      html += '<span class="badge bpl" style="font-size:9px;padding:2px 6px;flex-shrink:0">'+(w.code||('WCGW-'+(idx+1)))+'</span>';
+      html += '<div style="flex:1">';
+      html += '<div style="font-size:12px;font-weight:500">'+w.title+'</div>';
+      if (w.description) html += '<div style="font-size:10px;color:var(--text-3);margin-top:2px">'+w.description+'</div>';
+      html += '</div>';
+      html += '<button class="bs" style="font-size:10px;padding:1px 6px" onclick="showEditWCGWModal('+idx+')">Éditer</button>';
+      html += '<button class="bd" style="font-size:10px;padding:1px 5px" onclick="removeWCGW('+idx+')">×</button>';
+      html += '</div>';
+      // Détails : risques liés + contrôles
+      html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:10px;color:var(--text-3);padding-left:38px">';
+      if (linkedRisks.length) {
+        html += '<span><strong>Risques :</strong></span>';
+        linkedRisks.forEach(function(rt){
+          html += '<span class="badge bpl" style="font-size:9px;padding:1px 5px">'+rt+'</span>';
+        });
+      } else {
+        html += '<span style="font-style:italic">Aucun risque lié</span>';
+      }
+      html += '<span>·</span>';
+      html += '<span><strong>Contrôles :</strong> '+blockedBy+'</span>';
+      html += '</div>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  return html;
+}
+
+function showAddWCGWModal() { showWCGWModal(null); }
+function showEditWCGWModal(idx) {
+  var d = getAudData(CA);
+  var w = (d.wcgw && d.wcgw[CS] || [])[idx];
+  if (!w) return;
+  showWCGWModal({idx:idx, wcgw:w});
+}
+
+function showWCGWModal(existing) {
+  // Récupérer les risques URD du processus de l'audit
+  var a = getAudits().find(function(x){return x.id===CA;});
+  var pids = (Array.isArray(a&&a.processIds) && a.processIds.length) ? a.processIds : (a&&a.processId ? [a.processId] : []);
+  var seen = {};
+  var risks = [];
+  pids.forEach(function(pid){
+    var p = PROCESSES.find(function(x){return x.id===pid;});
+    if (!p) return;
+    (p.riskRefs||[]).forEach(function(rid){
+      if (seen[rid]) return;
+      seen[rid] = true;
+      var r = (RISK_UNIVERSE||[]).find(function(x){return x.id===rid;});
+      if (r) risks.push(r);
+    });
+  });
+
+  var currentRiskIds = (existing && existing.wcgw.riskIds) || [];
+  var risksHtml = '';
+  if (risks.length) {
+    risksHtml = '<div><label>Risques liés (cochez ceux que ce WCGW concerne)</label>'
+      + '<div class="cb-list" style="display:flex;flex-direction:column;gap:3px;max-height:160px;overflow-y:auto;border:.5px solid var(--border);border-radius:var(--radius);padding:8px 10px;background:var(--bg-card)">'
+      + risks.map(function(r){
+          var checked = currentRiskIds.indexOf(r.id)>=0 ? ' checked' : '';
+          var colors = (typeof RISK_IMPACT_COLORS!=='undefined' && RISK_IMPACT_COLORS[r.impact]) ? RISK_IMPACT_COLORS[r.impact] : {bg:'#F3F4F6',color:'#374151'};
+          return '<label><input type="checkbox" class="wcgw-risk-cb" value="'+r.id+'"'+checked+'><span><span class="badge" style="background:'+colors.bg+';color:'+colors.color+';font-size:9px;margin-right:5px">'+(r.impact||'—')+'</span>'+r.title+'</span></label>';
+        }).join('')
+      + '</div></div>';
+  } else {
+    risksHtml = '<div style="font-size:11px;color:var(--text-3);padding:8px;background:var(--bg);border-radius:6px">ℹ️ Aucun risque associé au processus. Va dans Audit Universe pour associer des risques URD aux processus.</div>';
+  }
+
+  var body = '<div><label>Code <span style="color:var(--red)">*</span></label><input id="wcgw-code" value="'+((existing&&existing.wcgw.code)||'')+'" placeholder="ex : WCGW-1"/></div>'
+    + '<div><label>Titre <span style="color:var(--red)">*</span></label><input id="wcgw-title" value="'+((existing&&existing.wcgw.title)||'')+'" placeholder="ex : Accès non autorisé aux données client"/></div>'
+    + '<div><label>Description</label><textarea id="wcgw-desc" style="width:100%;min-height:60px" placeholder="Décrivez le scénario de risque...">'+((existing&&existing.wcgw.description)||'')+'</textarea></div>'
+    + risksHtml;
+
+  openModal(existing ? 'Éditer WCGW' : 'Nouveau WCGW', body, async function(){
+    var code = document.getElementById('wcgw-code').value.trim();
+    var title = document.getElementById('wcgw-title').value.trim();
+    if (!code) { toast('Code obligatoire'); return; }
+    if (!title) { toast('Titre obligatoire'); return; }
+    var description = document.getElementById('wcgw-desc').value.trim();
+    var riskIds = [];
+    document.querySelectorAll('.wcgw-risk-cb:checked').forEach(function(cb){riskIds.push(cb.value);});
+
+    var d = getAudData(CA);
+    if (!d.wcgw) d.wcgw = {};
+    if (!d.wcgw[CS]) d.wcgw[CS] = [];
+
+    if (existing) {
+      d.wcgw[CS][existing.idx] = Object.assign({}, existing.wcgw, {code, title, description, riskIds});
+      addHist('edit', 'WCGW "'+title+'" modifié');
+    } else {
+      d.wcgw[CS].push({
+        id: 'wcgw_'+Date.now(),
+        code, title, description, riskIds,
+      });
+      addHist('add', 'WCGW "'+title+'" créé');
+    }
+    await saveAuditData(CA);
+    document.getElementById('det-content').innerHTML = renderDetContent();
+    toast('WCGW '+(existing?'modifié':'créé')+' ✓');
+  });
+}
+
+async function removeWCGW(idx) {
+  var d = getAudData(CA);
+  var w = (d.wcgw && d.wcgw[CS] || [])[idx];
+  if (!w) return;
+  // Vérifier qu'aucun contrôle n'y est lié
+  var ctrls = (d.controls && d.controls[CS]) || [];
+  var linked = ctrls.filter(function(c){return c.wcgwId === w.id;}).length;
+  var msg = 'Supprimer le WCGW "'+w.title+'" ?';
+  if (linked) msg += '\n\n⚠️ '+linked+' contrôle(s) y est/sont lié(s) — ils perdront leur référence.';
+  if (!confirm(msg)) return;
+  d.wcgw[CS].splice(idx, 1);
+  // Casser les liens des contrôles vers ce WCGW
+  ctrls.forEach(function(c){if (c.wcgwId === w.id) delete c.wcgwId;});
+  await saveAuditData(CA);
+  document.getElementById('det-content').innerHTML = renderDetContent();
+  toast('WCGW supprimé ✓');
+}
+
+// ─── ÉTAPE 5 : Contrôles enrichis ───────────────────────────────
+function renderControlsSection() {
+  var d = getAudData(CA);
+  var ctrls = (d.controls && d.controls[CS]) || [];
+
+  var html = '<div class="card" style="margin-bottom:.75rem">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+  html += '<div style="font-size:12px;font-weight:600;color:var(--text-2)">Contrôles <span style="font-size:10px;font-weight:400;color:var(--text-3)">('+ctrls.length+')</span></div>';
+  html += '<button class="bs" style="font-size:11px;padding:3px 9px" onclick="showAddControlModal()">+ Ajouter un contrôle</button>';
+  html += '</div>';
+  html += '<div style="font-size:10px;color:var(--text-3);margin-bottom:8px;font-style:italic">Chaque contrôle bloque un WCGW spécifique.</div>';
+
+  if (!ctrls.length) {
+    html += '<div style="font-size:11px;color:var(--text-3);font-style:italic;padding:.5rem">Aucun contrôle défini.</div>';
+  } else {
+    var wcgwList = (d.wcgw && d.wcgw[CS]) || [];
+    ctrls.forEach(function(c, idx){
+      var ctrlCode = c.code || ('CTRL-'+(idx+1));
+      var typeBadge = c.clef
+        ? '<span class="badge" style="background:#E0E7FF;color:#3730A3;font-size:9px">Key</span>'
+        : '<span class="badge bpl" style="font-size:9px">Non Key</span>';
+      var designBadge = c.design === 'existing'
+        ? '<span class="badge bdn" style="font-size:9px">Existing</span>'
+        : '<span class="badge" style="background:#FAEEDA;color:#854F0B;font-size:9px">Target</span>';
+      var wcgwLinked = wcgwList.find(function(w){return w.id === c.wcgwId;});
+
+      html += '<div style="border-top:.5px solid var(--border);padding:8px 0">';
+      html += '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:4px">';
+      html += '<div style="flex:1">';
+      html += '<div style="font-size:12px;font-weight:500"><span style="color:var(--text-3);font-size:10px;margin-right:6px">'+ctrlCode+'</span>'+(c.name||c.label||'(sans nom)')+'</div>';
+      if (c.description) html += '<div style="font-size:10px;color:var(--text-3);margin-top:2px">'+c.description+'</div>';
+      html += '</div>';
+      html += typeBadge + designBadge;
+      html += '<button class="bs" style="font-size:10px;padding:1px 6px;margin-left:5px" onclick="showEditControlModal('+idx+')">Éditer</button>';
+      html += '<button class="bd" style="font-size:10px;padding:1px 5px" onclick="removeControlAt('+idx+')">×</button>';
+      html += '</div>';
+      // Détails secondaires
+      html += '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;font-size:10px;color:var(--text-2);padding-left:0;margin-top:6px">';
+      if (c.nature) html += '<div><span style="color:var(--text-3)">Nature :</span> '+c.nature+'</div>';
+      if (c.freq) html += '<div><span style="color:var(--text-3)">Fréquence :</span> '+c.freq+'</div>';
+      if (c.owner) html += '<div><span style="color:var(--text-3)">Owner :</span> '+c.owner+'</div>';
+      if (c.wcgwId) {
+        html += '<div style="grid-column:span 3"><span style="color:var(--text-3)">Bloque WCGW :</span> '+(wcgwLinked ? '<span class="badge bpl" style="font-size:9px;padding:1px 5px">'+(wcgwLinked.code||'')+' — '+wcgwLinked.title+'</span>' : '<span style="font-style:italic;color:var(--text-3)">référence cassée</span>')+'</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  return html;
+}
+
+function showAddControlModal() { showControlModal(null); }
+function showEditControlModal(idx) {
+  var d = getAudData(CA);
+  var c = (d.controls && d.controls[CS] || [])[idx];
+  if (!c) return;
+  showControlModal({idx:idx, ctrl:c});
+}
+
+function showControlModal(existing) {
+  var d = getAudData(CA);
+  var wcgwList = (d.wcgw && d.wcgw[CS]) || [];
+  var FREQS = ['As needed','Day','Week','Month','Quarter','Semester','Year'];
+  var NATURES = ['IT','IT-Dependent','Manual'];
+
+  var c = existing ? existing.ctrl : {};
+  var wcgwOpts = '<option value="">— Aucun —</option>'
+    + wcgwList.map(function(w){return '<option value="'+w.id+'"'+(c.wcgwId===w.id?' selected':'')+'>'+(w.code||'')+' — '+w.title+'</option>';}).join('');
+  var freqOpts = FREQS.map(function(f){return '<option value="'+f+'"'+(c.freq===f?' selected':'')+'>'+f+'</option>';}).join('');
+  var natureOpts = NATURES.map(function(n){return '<option value="'+n+'"'+(c.nature===n?' selected':'')+'>'+n+'</option>';}).join('');
+
+  var body = '<div><label>Nom du contrôle <span style="color:var(--red)">*</span></label><input id="c-name" value="'+(c.name||c.label||'')+'" placeholder="ex : Validation à 2 niveaux"/></div>'
+    + '<div><label>Description</label><textarea id="c-desc" style="width:100%;min-height:50px" placeholder="Description du contrôle...">'+(c.description||'')+'</textarea></div>'
+    + '<div class="g2">'
+      + '<div><label>Type</label><select id="c-key"><option value="1"'+(c.clef?' selected':'')+'>Key</option><option value="0"'+(!c.clef?' selected':'')+'>Non Key</option></select></div>'
+      + '<div><label>Design</label><select id="c-design"><option value="existing"'+(c.design==='existing'?' selected':'')+'>Existing</option><option value="target"'+(c.design==='target'?' selected':'')+'>Target</option></select></div>'
+    + '</div>'
+    + '<div class="g2">'
+      + '<div><label>Nature</label><select id="c-nature"><option value="">—</option>'+natureOpts+'</select></div>'
+      + '<div><label>Fréquence</label><select id="c-freq"><option value="">—</option>'+freqOpts+'</select></div>'
+    + '</div>'
+    + '<div><label>Owner</label><input id="c-owner" value="'+(c.owner||'')+'" placeholder="ex : Finance, IT Sécurité..."/></div>'
+    + '<div><label>WCGW bloqué</label><select id="c-wcgw">'+wcgwOpts+'</select>'
+    + (wcgwList.length?'':'<div style="font-size:10px;color:var(--text-3);margin-top:3px;font-style:italic">Créez d\'abord des WCGW pour pouvoir les lier.</div>')
+    + '</div>';
+
+  openModal(existing ? 'Éditer contrôle' : 'Nouveau contrôle', body, async function(){
+    var name = document.getElementById('c-name').value.trim();
+    if (!name) { toast('Nom obligatoire'); return; }
+    var description = document.getElementById('c-desc').value.trim();
+    var clef = document.getElementById('c-key').value === '1';
+    var design = document.getElementById('c-design').value;
+    var nature = document.getElementById('c-nature').value;
+    var freq = document.getElementById('c-freq').value;
+    var owner = document.getElementById('c-owner').value.trim();
+    var wcgwId = document.getElementById('c-wcgw').value;
+
+    if (!d.controls) d.controls = {};
+    if (!d.controls[CS]) d.controls[CS] = [];
+
+    if (existing) {
+      Object.assign(d.controls[CS][existing.idx], {
+        name, label:name, description, clef, design, nature, freq, owner, wcgwId,
+      });
+      addHist('edit', 'Contrôle "'+name+'" modifié');
+    } else {
+      var idx = d.controls[CS].length;
+      d.controls[CS].push({
+        id: 'ctrl_'+Date.now(),
+        code: 'CTRL-'+(idx+1),
+        name, label:name, description, clef, design, nature, freq, owner, wcgwId,
+        result: null, testNature: '', finding: '', finalized: false,
+      });
+      addHist('add', 'Contrôle "'+name+'" créé');
+    }
+    await saveAuditData(CA);
+    document.getElementById('det-content').innerHTML = renderDetContent();
+    toast('Contrôle '+(existing?'modifié':'créé')+' ✓');
+  });
+}
+
+async function removeControlAt(idx) {
+  var d = getAudData(CA);
+  var c = (d.controls && d.controls[CS] || [])[idx];
+  if (!c) return;
+  if (!confirm('Supprimer le contrôle "'+(c.name||c.label||'')+'" ?')) return;
+  d.controls[CS].splice(idx, 1);
+  await saveAuditData(CA);
+  document.getElementById('det-content').innerHTML = renderDetContent();
+  toast('Contrôle supprimé ✓');
+}
 function renderTestsSection() {
   // Conserver l'ancien rendu Tests pour CS=5
   var d = getAudData(CA);
