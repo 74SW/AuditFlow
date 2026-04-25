@@ -3383,7 +3383,8 @@ function renderNotesSection() {
 
 function renderRiskSection() {
   // Étape 5 : risques du processus (lecture seule depuis Risk Universe)
-  var a = getAudits().find(function(x){return x.id===CA;});
+  // IMPORTANT : on lit depuis AUDIT_PLAN directement (pas getAudits qui simplifie l'objet et perd processIds)
+  var a = (AUDIT_PLAN||[]).find(function(x){return x.id===CA;});
   var pids = (Array.isArray(a&&a.processIds) && a.processIds.length) ? a.processIds : (a&&a.processId ? [a.processId] : []);
   var seen = {};
   var risks = [];
@@ -3481,7 +3482,8 @@ function showEditWCGWModal(idx) {
 
 function showWCGWModal(existing) {
   // Récupérer les risques URD du processus de l'audit
-  var a = getAudits().find(function(x){return x.id===CA;});
+  // IMPORTANT : on lit depuis AUDIT_PLAN directement (pas getAudits qui simplifie l'objet)
+  var a = (AUDIT_PLAN||[]).find(function(x){return x.id===CA;});
   var pids = (Array.isArray(a&&a.processIds) && a.processIds.length) ? a.processIds : (a&&a.processId ? [a.processId] : []);
   var seen = {};
   var risks = [];
