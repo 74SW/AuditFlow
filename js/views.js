@@ -645,9 +645,9 @@ V['dashboard']=()=>{
   // ── CAPSULE 1 : Process Audits par domaine ──
   html += '<div class="card" style="padding:1rem;">';
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:.5rem;">Process Audits '+_dbYear+' ('+pTotal+')</div>';
-  html += '<div style="display:flex;align-items:center;gap:.875rem;">';
+  html += '<div style="display:flex;align-items:center;gap:.75rem;">';
   html += '<canvas id="db-donut" width="90" height="90" style="flex-shrink:0;"></canvas>';
-  html += '<div style="display:flex;flex-direction:column;gap:4px;font-size:11px;flex:1;min-width:0;">';
+  html += '<div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;">';
   // Construire les items à partir de domCount, palette de couleurs
   var domPalette = ['#AFA9EC','#85B7EB','#5DCAA5','#EF9F27','#F0997B','#97C459','#C7B7E5','#8AC6F7','#F4B183','#A0D0A4'];
   var domEntries = Object.keys(domCount).sort(function(a,b){return (a||'').localeCompare(b||'','fr',{sensitivity:'base'});});
@@ -661,11 +661,11 @@ V['dashboard']=()=>{
     chartItems.forEach(function(ci){
       var pct2=pTotal?Math.round(ci.val/pTotal*100):0;
       // Tronquer le nom de domaine si trop long
-      var lblShort = ci.label.length>20 ? ci.label.slice(0,18)+'…' : ci.label;
-      html+='<div style="display:flex;align-items:center;gap:5px;">'
-        +'<div style="width:8px;height:8px;border-radius:50%;background:'+ci.color+';flex-shrink:0;"></div>'
-        +'<span style="color:var(--text-2);font-size:10px;" title="'+ci.label+'">'+lblShort+'</span>'
-        +'<span style="font-weight:600;margin-left:auto;font-size:11px;white-space:nowrap;">'+ci.val+' <span style="font-weight:400;color:var(--text-3);">('+pct2+'%)</span></span>'
+      var lblShort = ci.label.length>22 ? ci.label.slice(0,20)+'…' : ci.label;
+      html+='<div style="display:flex;align-items:center;gap:4px;line-height:1.2;">'
+        +'<div style="width:6px;height:6px;border-radius:50%;background:'+ci.color+';flex-shrink:0;"></div>'
+        +'<span style="color:var(--text-2);font-size:9px;" title="'+ci.label+'">'+lblShort+'</span>'
+        +'<span style="font-weight:600;margin-left:auto;font-size:9px;white-space:nowrap;">'+ci.val+' <span style="font-weight:400;color:var(--text-3);">('+pct2+'%)</span></span>'
         +'</div>';
     });
   }
