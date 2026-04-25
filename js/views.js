@@ -3568,45 +3568,97 @@ async function saveStepNote(which, value) {
 
 // Documents : créer/uploader, marquer prêt-pour-revue, marquer revu, supprimer
 function attachExpectedDocument(expectedName) {
-  // Pour l'instant on simule l'upload (pas d'upload réel — à implémenter plus tard avec SharePoint Files)
-  var fakeName = prompt('Nom du fichier :', expectedName + '_v1.pdf');
-  if (!fakeName || !fakeName.trim()) return;
-  var d = getAudData(CA);
-  if (!d.docs) d.docs = [];
-  d.docs.push({
-    id: 'doc_'+Date.now(),
-    name: fakeName.trim(),
-    expectedName: expectedName,
-    step: CS,
-    size: '—',
-    uploadedBy: CU ? CU.name : '—',
-    uploadedAt: new Date().toISOString(),
-    reviewStatus: 'none', // none / pending / reviewed
-  });
-  saveAuditData(CA).then(function(){
+  // Ouvre la fenêtre du système pour sélectionner un fichier
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.csv,.txt,.png,.jpg,.jpeg';
+  inp.onchange = async function(){
+    if (!inp.files.length) return;
+    var file = inp.files[0];
+    var d = getAudData(CA);
+    if (!d.docs) d.docs = [];
+    var newDoc = {
+      id: 'doc_'+Date.now(),
+      name: file.name,
+      expectedName: expectedName,
+      step: CS,
+      size: formatFileSize(file.size),
+      uploadedBy: CU ? CU.name : '—',
+      uploadedAt: new Date().toISOString(),
+      reviewStatus: 'none',
+    };
+    // Tenter l'upload réel via la mécanique existante (uploadDoc → SharePoint Drive)
+    if (typeof uploadDoc === 'function') {
+      try {
+        toast('Upload en cours...');
+        var uploaded = await uploadDoc(CA, file, CS, CU?CU.name:'Inconnu');
+        // uploadDoc renvoie un objet avec id, name, url, size, etc.
+        if (uploaded) {
+          // Fusionner avec nos métadonnées (expectedName, reviewStatus)
+          Object.assign(newDoc, uploaded);
+          newDoc.expectedName = expectedName;
+          newDoc.reviewStatus = 'none';
+        }
+      } catch(e){
+        console.warn('[Doc] upload échoué, stockage métadonnées seules:', e.message);
+      }
+    }
+    d.docs.push(newDoc);
+    await saveAuditData(CA);
     document.getElementById('det-content').innerHTML = renderDetContent();
-    toast('Document attaché ✓');
-  });
+    toast(file.name+' attaché ✓');
+  };
+  inp.click();
 }
 
 function addFreeDocument() {
-  var name = prompt('Nom du document :', '');
-  if (!name || !name.trim()) return;
-  var d = getAudData(CA);
-  if (!d.docs) d.docs = [];
-  d.docs.push({
-    id: 'doc_'+Date.now(),
-    name: name.trim(),
-    step: CS,
-    size: '—',
-    uploadedBy: CU ? CU.name : '—',
-    uploadedAt: new Date().toISOString(),
-    reviewStatus: 'none',
-  });
-  saveAuditData(CA).then(function(){
+  // Ouvre la fenêtre du système pour sélectionner un fichier
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.csv,.txt,.png,.jpg,.jpeg';
+  inp.multiple = true;
+  inp.onchange = async function(){
+    if (!inp.files.length) return;
+    var d = getAudData(CA);
+    if (!d.docs) d.docs = [];
+    var files = Array.from(inp.files);
+    toast('Upload en cours...');
+    for (var i=0; i<files.length; i++) {
+      var file = files[i];
+      var newDoc = {
+        id: 'doc_'+Date.now()+'_'+i,
+        name: file.name,
+        step: CS,
+        size: formatFileSize(file.size),
+        uploadedBy: CU ? CU.name : '—',
+        uploadedAt: new Date().toISOString(),
+        reviewStatus: 'none',
+      };
+      if (typeof uploadDoc === 'function') {
+        try {
+          var uploaded = await uploadDoc(CA, file, CS, CU?CU.name:'Inconnu');
+          if (uploaded) {
+            Object.assign(newDoc, uploaded);
+            newDoc.reviewStatus = 'none';
+          }
+        } catch(e){
+          console.warn('[Doc] upload échoué:', e.message);
+        }
+      }
+      d.docs.push(newDoc);
+    }
+    await saveAuditData(CA);
     document.getElementById('det-content').innerHTML = renderDetContent();
-    toast('Document ajouté ✓');
-  });
+    toast(files.length+' fichier(s) attaché(s) ✓');
+  };
+  inp.click();
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' o';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' Ko';
+  return (bytes/(1024*1024)).toFixed(1) + ' Mo';
 }
 
 async function markDocPendingReview(docId) {
@@ -3644,7 +3696,14 @@ function downloadDoc(docId) {
   var d = getAudData(CA);
   var doc = (d.docs||[]).find(function(x){return x.id===docId;});
   if (!doc) return;
-  toast('Téléchargement de '+doc.name+' (à implémenter)');
+  // Si on a une URL SharePoint, on l'ouvre dans un nouvel onglet
+  if (doc.url) {
+    window.open(doc.url, '_blank');
+  } else if (doc.webUrl) {
+    window.open(doc.webUrl, '_blank');
+  } else {
+    toast('URL non disponible pour ce document');
+  }
 }
 
 function goStep(i){
