@@ -1995,14 +1995,16 @@ V['plans-bu']=()=>`
       <select id="f-bu-ent" onchange="renderBUTable()"><option value="all">Toutes entités</option></select>
       <select id="f-bu-yr" onchange="renderBUTable()"><option value="all">Toutes années</option><option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option></select>
     </div>
+    <div id="bu-banner-zone"></div>
     <div class="tw"><table id="bu-tbl"></table></div>
   </div>`;
 I['plans-bu']=()=>{
+  // Réinitialiser le filtre pays au chargement de la vue
+  window._buCountryFilter = null;
+  // Le filtre "entité" n'est plus pertinent avec la nouvelle structure pays-société
+  // (les entités peuvent être SBS et AXW dans le même pays). On le laisse vide ou avec valeur "all" uniquement.
   var sel=document.getElementById('f-bu-ent');
-  if(sel&&GROUP_STRUCTURE.length){
-    sel.innerHTML='<option value="all">Toutes entités</option>'
-      +GROUP_STRUCTURE.map(function(e){return'<option>'+e.name+'</option>';}).join('');
-  }
+  if(sel) sel.innerHTML='<option value="all">Toutes entités</option>';
   renderBUTable();
   renderWorldMap();
 };
@@ -2149,6 +2151,34 @@ function _renderMap(svg,path,getColor,getStroke,world){
   var countries=topojson.feature(world,world.objects.countries);
   var borders=topojson.mesh(world,world.objects.countries,function(a,b){return a!==b;});
 
+  // Construire la table inverse ISO A2 → nom de pays français (premier match)
+  // À partir de la table nameToIso (utilisée plus haut)
+  var nameToIsoMap={
+    'maroc':'MA','tunisie':'TN','algérie':'DZ','cameroun':'CM','liban':'LB',
+    'royaume-uni':'GB','france':'FR','allemagne':'DE','roumanie':'RO','bulgarie':'BG',
+    'espagne':'ES','italie':'IT','états-unis':'US','inde':'IN','australie':'AU',
+    'singapour':'SG','émirats arabes unis':'AE','arabie saoudite':'SA','chine':'CN',
+    'japon':'JP','brésil':'BR','nigéria':'NG','afrique du sud':'ZA','kenya':'KE',
+    'sénégal':'SN','belgique':'BE','pays-bas':'NL','pologne':'PL','turquie':'TR',
+    'égypte':'EG','mexique':'MX','argentine':'AR','colombie':'CO',"côte d'ivoire":'CI',
+  };
+  var isoToName={};
+  Object.keys(nameToIsoMap).forEach(function(name){
+    var iso = nameToIsoMap[name];
+    if (!isoToName[iso]) isoToName[iso] = name.charAt(0).toUpperCase()+name.slice(1);
+  });
+
+  // Helper : retourner la liste des pays effectivement audités (passés ou futurs)
+  function isoHasAudit(iso) {
+    var buAudits = AUDIT_PLAN.filter(function(a){return a.type==='BU';});
+    return buAudits.some(function(a){
+      return (a.pays||[]).some(function(p){
+        var key = (p||'').toLowerCase().trim();
+        return nameToIsoMap[key] === iso;
+      });
+    });
+  }
+
   // Fond pays
   svg.selectAll('path.country')
     .data(countries.features)
@@ -2165,10 +2195,29 @@ function _renderMap(svg,path,getColor,getStroke,world){
       return getStroke(iso);
     })
     .attr('stroke-width',0.4)
+    .style('cursor', function(d){
+      var iso=_isoNumToA2[parseInt(d.id)]||'';
+      return isoHasAudit(iso) ? 'pointer' : 'default';
+    })
+    .on('dblclick', function(event, d){
+      var iso=_isoNumToA2[parseInt(d.id)]||'';
+      if (!isoHasAudit(iso)) return;
+      var name = isoToName[iso] || iso;
+      // Capitalize correctement le nom (gérer "Côte d'Ivoire", etc.)
+      window._buCountryFilter = name;
+      renderBUTable();
+      // Scroller vers la table
+      setTimeout(function(){
+        var t = document.getElementById('bu-tbl');
+        if (t) t.scrollIntoView({behavior:'smooth', block:'start'});
+      }, 60);
+    })
     .append('title')
     .text(function(d){
       var iso=_isoNumToA2[parseInt(d.id)]||'';
-      return iso;
+      var name = isoToName[iso] || iso;
+      var hasAudit = isoHasAudit(iso);
+      return hasAudit ? (name + ' — Double-cliquez pour voir les audits') : name;
     });
 
   // Frontières
@@ -2183,11 +2232,58 @@ function _renderMap(svg,path,getColor,getStroke,world){
 function renderBUTable(){
   var fe=document.getElementById('f-bu-ent')&&document.getElementById('f-bu-ent').value||'all';
   var fy=document.getElementById('f-bu-yr')&&document.getElementById('f-bu-yr').value||'all';
-  var rows=AUDIT_PLAN.filter(function(a){return a.type==='BU'&&(fe==='all'||a.entite===fe)&&(fy==='all'||String(a.annee)===fy);});
+  var countryFilter = window._buCountryFilter || null;
+
+  // Toutes les BU (toutes années si filtre pays actif, pour montrer historique + futur)
+  var rows = AUDIT_PLAN.filter(function(a){
+    if (a.type !== 'BU') return false;
+    if (fe !== 'all' && a.entite !== fe) return false;
+    if (countryFilter) {
+      // Si filtre par pays : on ignore le filtre année et on prend toutes les BU touchant ce pays
+      var paysMatch = (a.pays||[]).some(function(p){
+        return (p||'').toLowerCase().trim() === countryFilter.toLowerCase().trim();
+      });
+      return paysMatch;
+    } else {
+      if (fy !== 'all' && String(a.annee) !== fy) return false;
+      return true;
+    }
+  });
+
+  // Bandeau si filtre pays actif
+  var bannerHtml = '';
+  if (countryFilter) {
+    bannerHtml = '<div style="background:var(--purple-lt);border-left:3px solid var(--purple);padding:8px 12px;margin-bottom:.75rem;border-radius:6px;display:flex;align-items:center;justify-content:space-between;font-size:12px">'
+      + '<div><strong>Audits du pays : '+countryFilter+'</strong> ('+rows.length+' audit'+(rows.length>1?'s':'')+' — toutes années)</div>'
+      + '<button class="bs" style="font-size:11px;padding:3px 10px" onclick="clearBUCountryFilter()">× Effacer le filtre</button>'
+      + '</div>';
+  }
+
+  // Trier par année (les plus récents en premier) si filtre pays actif
+  if (countryFilter) {
+    rows.sort(function(a,b){return (b.annee||0)-(a.annee||0);});
+  }
+
   var regs=[...new Set(rows.map(function(b){return b.region;}))];
   var h='<thead><tr><th>Entité</th><th>Région</th><th>Pays</th><th>Titre mission</th><th>Année</th><th>Auditeurs</th><th>Statut</th></tr></thead><tbody>';
   if(!rows.length){
-    h+='<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:1.5rem">Aucune BU planifiée.</td></tr>';
+    h+='<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:1.5rem">'
+      +(countryFilter?'Aucun audit pour '+countryFilter+'.':'Aucune BU planifiée.')
+      +'</td></tr>';
+  } else if (countryFilter) {
+    // Si filtre pays : pas de regroupement par région (on est déjà dans un seul pays)
+    rows.forEach(function(b){
+      var avs=(b.auditeurs||[]).map(function(id){return avEl(id,20);}).join('');
+      h+='<tr style="cursor:pointer" onclick="openAudit(\''+b.id+'\')">'
+        +'<td><span class="badge bsbs">'+(b.entite||'')+'</span></td>'
+        +'<td style="color:var(--text-2);font-size:11px">'+(b.region||'')+'</td>'
+        +'<td style="font-weight:500;font-size:11px">'+((b.pays||[]).join(', '))+'</td>'
+        +'<td style="font-size:11px">'+b.titre+'</td>'
+        +'<td style="font-weight:500;color:var(--purple-dk)">'+b.annee+'</td>'
+        +'<td><div style="display:flex;gap:3px">'+(avs||'<span style="font-size:10px;color:var(--text-3)">—</span>')+'</div></td>'
+        +'<td>'+badge(b.statut||'Planifié')+'</td>'
+        +'</tr>';
+    });
   } else {
     regs.forEach(function(reg){
       h+='<tr class="sr"><td colspan="7">'+reg+'</td></tr>';
@@ -2205,7 +2301,15 @@ function renderBUTable(){
       });
     });
   }
-  document.getElementById('bu-tbl').innerHTML=h+'</tbody>';
+
+  document.getElementById('bu-tbl').innerHTML = h + '</tbody>';
+  var banner = document.getElementById('bu-banner-zone');
+  if (banner) banner.innerHTML = bannerHtml;
+}
+
+function clearBUCountryFilter() {
+  window._buCountryFilter = null;
+  renderBUTable();
 }
 
 // ══════════════════════════════════════════════════════════════
