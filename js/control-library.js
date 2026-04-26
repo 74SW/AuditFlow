@@ -1,84 +1,50 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  control-library.js — Bibliothèque de contrôles AuditFlow (v4 final)
+//  control-library.js v6 — Bridge simple et déterministe
 //
-//  S'appuie sur la variable globale CONTROLS_LIBRARY chargée par graph.js
-//  depuis la liste SharePoint AF_ControlsLibrary.
-//
-//  Fonctionnalités :
-//   - Modale d'import avec pré-cochage par mots-clés (synonymes inclus)
-//   - Tri intelligent : cycles pertinents en haut
-//   - Filtre "cycles pertinents uniquement" coché par défaut
-//   - Fonction d'import en masse depuis CSV (booléens convertis correctement)
+//  Logique unique :
+//   1. On lit le nom EXACT du process de l'audit (PROCESSES.proc)
+//   2. On le cherche dans CL_PROCESS_BRIDGE
+//   3. Si match avec une liste non-vide : on filtre CONTROLS_LIBRARY par domain
+//   4. Sinon : message "Aucun référentiel" + bouton "Voir tous les contrôles"
 // ════════════════════════════════════════════════════════════════════════════
 
-const CL_SYNONYMS = {
-  'otc': ['order-to-cash', 'order to cash'],
-  'p2p': ['procure-to-pay', 'procure to pay', 'purchasing'],
-  'rtr': ['record-to-report', 'record to report'],
-  'r2r': ['record-to-report', 'record to report'],
-  'h2r': ['human resources', 'hr'],
-  'fa': ['fixed assets'],
-  'cybersecurity': ['it - access management', 'it - data', 'access', 'data'],
-  'data': ['it - data'],
-  'access': ['it - access management'],
-  'purchasing': ['procure-to-pay'],
-  'third': ['procure-to-pay'],
-  'party': ['procure-to-pay'],
-  'accounting': ['record-to-report', 'fixed assets', 'r&d'],
-  'tax': ['record-to-report'],
-  'treasury': ['treasury'],
-  'finance': ['record-to-report', 'order-to-cash', 'procure-to-pay',
-              'treasury', 'fixed assets', 'r&d', 'payroll'],
-  'payroll': ['payroll'],
-  'talent': ['human resources'],
-  'hr': ['human resources', 'payroll'],
-};
-
-// ════════════════════════════════════════════════════════════════════════════
-//  BRIDGE — Mapping exact entre process AuditFlow et cycles bibliothèque
-//
-//  Clé : nom EXACT du process tel que défini dans PROCESSES (champ .proc)
-//  Valeur : tableau des domaines biblio applicables (champ .domain des contrôles)
-//
-//  Si un process n'est pas listé ici, le système retombe sur le matching
-//  par synonymes/mots-clés (CL_SYNONYMS ci-dessus).
-//
-//  Process avec liste vide = pas de bibliothèque → l'IA peut suggérer (cas 3).
-// ════════════════════════════════════════════════════════════════════════════
+// ─── BRIDGE : Process AuditFlow → Cycles bibliothèque ──────────────────────
+// Clé = nom EXACT du process tel que stocké dans PROCESSES.proc
+// Valeur = tableau de domaines biblio (champ .domain des contrôles)
 const CL_PROCESS_BRIDGE = {
-  // ─── Finance ────────────────────────────────────────────────────────────
-  'Finance - OTC':                       ['Order-to-Cash'],
-  'Finance - Treasury':                  ['Treasury'],
-  'Finance - Accounting & Tax':          ['Record-to-Report', 'Fixed Assets', 'R&D'],
-  'Finance - Budget/Forecast':           [],
+  // Domain A - Governance
+  'Acquisitions & Integration':          [],
+  'Compliance':                          [],
+  'ESG':                                 [],
 
-  // ─── Achats ─────────────────────────────────────────────────────────────
-  'Purchasing & Third Party Mgt':        ['Procure-to-Pay'],
-
-  // ─── RH ─────────────────────────────────────────────────────────────────
-  'HR - Payroll':                        ['Payroll'],
-  'HR - Talent Acquisition':             ['Human Resources'],
-
-  // ─── IT ─────────────────────────────────────────────────────────────────
-  'IT - Cybersecurity & Data':           ['IT - Access Management', 'IT - Data'],
-  'IT - Structure':                      ['IT - Access Management', 'IT - Data'],
-
-  // ─── Edition / Distribution / Deployment ───────────────────────────────
+  // Domain B - Edition
   'Product Dev':                         ['R&D'],
+  'Product Roadmap':                     [],
+
+  // Domain C - Deployment
+  'Cust Support':                        [],
   'Product Deployment (On Prem / SaaS)': ['IT - Access Management', 'IT - Data'],
+
+  // Domain D - Distribution
+  'Customer Success':                    [],
+  'Marketing (Corp, GTM)':               [],
   'Renewals':                            ['Order-to-Cash'],
   'Sales':                               ['Order-to-Cash'],
-
-  // ─── Process spécifiques (pas de biblio standard, IA recommandée) ──────
-  'Acquisitions & Integration':          [],
-  'Product Roadmap':                     [],
-  'Cust Support':                        [],
-  'Customer Success':                    [],
   'Sales Enablement':                    [],
-  'Marketing (Corp, GTM)':               [],
-  'ESG':                                 [],
-  'Compliance':                          [],
+
+  // Domain E - Support
+  'Finance - Accounting & Tax':          ['Record-to-Report', 'Fixed Assets', 'R&D'],
+  'Finance - Budget/Forecast':           [],
+  'Finance - OTC':                       ['Order-to-Cash'],
+  'Finance - Treasury':                  ['Treasury'],
+  'HR - Payroll':                        ['Payroll'],
+  'HR - Talent Aquisition':              ['Human Resources'],   // sans 'c' (orthographe BD)
+  'IT - Cybersecurity & Data':           ['IT - Access Management', 'IT - Data'],
+  'IT - Structure':                      ['IT - Access Management', 'IT - Data'],
+  'Purchasing & Third Party Mgt':        ['Procure-to-Pay'],
 };
+
+// ─── HELPERS ───────────────────────────────────────────────────────────────
 
 function clEsc(s) {
   if (s === null || s === undefined) return '';
@@ -92,6 +58,8 @@ function clMapFrequency(f) {
                 'Quarter': 'Trimestriel', 'Year': 'Annuel' };
   return map[f] || 'Ad hoc';
 }
+
+// ─── MODALE D'IMPORT ───────────────────────────────────────────────────────
 
 function openControlLibraryPicker(auditId) {
   if (typeof CONTROLS_LIBRARY === 'undefined' || !Array.isArray(CONTROLS_LIBRARY) || CONTROLS_LIBRARY.length === 0) {
@@ -108,49 +76,43 @@ function openControlLibraryPicker(auditId) {
   const proc = (window.PROCESSES || []).find(p => p.id === ap.processId);
   const procName = proc ? proc.proc : (ap.titre || '');
 
-  // ── PRIORITÉ 1 : Bridge exact (mapping en dur) ──────────────────────────
-  // Si le process est dans la table CL_PROCESS_BRIDGE, on utilise son mapping
-  let matchingDomains = new Set();
-  let matchSource = 'fallback';
-
-  if (procName && CL_PROCESS_BRIDGE.hasOwnProperty(procName)) {
-    const mapped = CL_PROCESS_BRIDGE[procName];
-    mapped.forEach(d => matchingDomains.add(d));
-    matchSource = mapped.length > 0 ? 'bridge' : 'bridge-empty';
-  } else {
-    // ── PRIORITÉ 2 : Fallback par synonymes/mots-clés ─────────────────────
-    const baseKeywords = procName.toLowerCase()
-      .replace(/[\-&\(\)\/]/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length >= 2);
-    const allKeywords = new Set(baseKeywords);
-    baseKeywords.forEach(k => {
-      if (CL_SYNONYMS[k]) CL_SYNONYMS[k].forEach(s => allKeywords.add(s.toLowerCase()));
-    });
-    const keywords = Array.from(allKeywords);
-
-    CONTROLS_LIBRARY.forEach(c => {
-      if (c.archived) return;
-      const domLower = (c.domain || '').toLowerCase();
-      if (keywords.some(k => domLower.includes(k))) {
-        matchingDomains.add(c.domain);
-      }
-    });
-    matchSource = matchingDomains.size > 0 ? 'synonyms' : 'none';
+  // ─── Logique de matching unique : BRIDGE ─────────────────────────────────
+  let mappedDomains = null;
+  if (CL_PROCESS_BRIDGE.hasOwnProperty(procName)) {
+    mappedDomains = CL_PROCESS_BRIDGE[procName];
   }
 
-  const allDomains = [...new Set(CONTROLS_LIBRARY.filter(c => !c.archived).map(c => c.domain))];
-  const sortedDomains = [
-    ...allDomains.filter(d => matchingDomains.has(d)),
-    ...allDomains.filter(d => !matchingDomains.has(d)).sort(),
-  ];
+  // Logger pour debug
+  console.log('[CTRL_LIB] Process audité:', JSON.stringify(procName));
+  console.log('[CTRL_LIB] Bridge match:', mappedDomains);
 
-  const candidates = CONTROLS_LIBRARY.filter(c => !c.archived);
+  // Filtrer les contrôles pertinents
+  let candidates;
+  let bannerHtml;
 
-  const preChecked = new Set(
-    candidates.filter(c => matchingDomains.has(c.domain)).map(c => c.id)
-  );
+  if (mappedDomains && mappedDomains.length > 0) {
+    candidates = CONTROLS_LIBRARY.filter(c =>
+      !c.archived && mappedDomains.includes(c.domain)
+    );
+    bannerHtml = `<div style="background:#E1F5EE;color:#085041;padding:8px 12px;font-size:12px">
+      <strong>${clEsc(procName)}</strong> → référentiel${mappedDomains.length>1?'s':''} <strong>${clEsc(mappedDomains.join(', '))}</strong>
+      · ${candidates.length} contrôle${candidates.length>1?'s':''} disponible${candidates.length>1?'s':''}
+    </div>`;
+  } else {
+    candidates = [];
+    const reason = mappedDomains === null
+      ? 'Ce processus n\'est pas mappé dans le bridge'
+      : 'Aucun référentiel bibliothèque ne couvre ce processus';
+    bannerHtml = `<div style="background:#FAEEDA;color:#854F0B;padding:8px 12px;font-size:12px">
+      <strong>${clEsc(procName)}</strong> · ${reason}.<br>
+      Tu peux ajouter des contrôles manuellement, ou utiliser l'IA pour des suggestions adaptées (à venir).
+    </div>`;
+  }
 
+  // Tous les contrôles non-archivés (pour le mode "voir tout")
+  const allControls = CONTROLS_LIBRARY.filter(c => !c.archived);
+
+  // ─── Construction de la modale ──────────────────────────────────────────
   const ov = document.createElement('div');
   ov.id = 'cl-ov';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
@@ -160,29 +122,18 @@ function openControlLibraryPicker(auditId) {
         <div style="font-size:15px;font-weight:600">Importer depuis la bibliothèque</div>
         <button onclick="document.getElementById('cl-ov').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999">×</button>
       </div>
-      <div style="background:#E1F5EE;color:#085041;padding:8px 12px;font-size:12px">
-        <strong>${clEsc(procName)}</strong> · ${candidates.length} contrôles · ${preChecked.size} pré-cochés
-        ${matchingDomains.size > 0
-          ? '<br>Cycles pertinents : <strong>' + clEsc([...matchingDomains].join(', ')) + '</strong>'
-          : (matchSource === 'bridge-empty'
-              ? '<br><em>Aucun cycle bibliothèque ne couvre ce process — tous les contrôles sont affichés. L\'IA peut suggérer des contrôles spécifiques.</em>'
-              : '<br><em>Process non reconnu — affichage de tous les contrôles disponibles.</em>')
-        }
-      </div>
+      ${bannerHtml}
       <div style="padding:10px 16px;border-bottom:1px solid #eee;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input id="cl-kw" placeholder="Filtrer par mot-clé..."
           style="flex:1;min-width:180px;padding:5px 9px;border:1px solid #ccc;border-radius:4px;font-size:12px"/>
         <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap">
-          <input type="checkbox" id="cl-key"/> Clés uniquement
+          <input type="checkbox" id="cl-all" /> Voir tous les contrôles (${allControls.length})
         </label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap">
-          <input type="checkbox" id="cl-rel" ${matchingDomains.size > 0 ? 'checked' : ''}/> Cycles pertinents seulement
-        </label>
-        <button id="cl-all" type="button"
+        <button id="cl-tick" type="button"
           style="padding:4px 10px;border:1px solid #ccc;background:#fff;border-radius:4px;cursor:pointer;font-size:11px">
           Tout cocher
         </button>
-        <button id="cl-none" type="button"
+        <button id="cl-untick" type="button"
           style="padding:4px 10px;border:1px solid #ccc;background:#fff;border-radius:4px;cursor:pointer;font-size:11px">
           Tout décocher
         </button>
@@ -204,22 +155,23 @@ function openControlLibraryPicker(auditId) {
     </div>`;
   document.body.appendChild(ov);
 
+  // ─── Rendu de la liste ──────────────────────────────────────────────────
   const render = () => {
     const kw = document.getElementById('cl-kw').value.toLowerCase().trim();
-    const keyOnly = document.getElementById('cl-key').checked;
-    const relOnly = document.getElementById('cl-rel').checked;
+    const showAll = document.getElementById('cl-all').checked;
 
-    let rows = candidates;
-    if (relOnly && matchingDomains.size > 0) {
-      rows = rows.filter(c => matchingDomains.has(c.domain));
-    }
-    if (keyOnly) rows = rows.filter(c => c.key);
+    let rows = showAll ? allControls : candidates;
     if (kw) {
       rows = rows.filter(c =>
         ((c.name || '') + ' ' + (c.description || '') + ' ' + (c.domain || '') + ' ' + (c.wcgwTypical || ''))
           .toLowerCase().includes(kw)
       );
     }
+
+    const isPrechecked = (c) => {
+      if (!mappedDomains || mappedDomains.length === 0) return false;
+      return mappedDomains.includes(c.domain);
+    };
 
     const grouped = {};
     rows.forEach(r => {
@@ -228,15 +180,20 @@ function openControlLibraryPicker(auditId) {
       grouped[k].push(r);
     });
 
+    const mapped = mappedDomains || [];
+    const sortedDomains = [
+      ...mapped.filter(d => grouped[d]),
+      ...Object.keys(grouped).filter(d => !mapped.includes(d)).sort()
+    ];
+
     let html = '';
     sortedDomains.forEach(g => {
-      if (!grouped[g]) return;
-      const isRel = matchingDomains.has(g);
-      html += `<div style="background:${isRel ? '#E1F5EE' : '#f5f5f5'};color:${isRel ? '#085041' : '#333'};padding:6px 14px;font-size:11px;font-weight:600;border-top:0.5px solid #ddd">
-        ${clEsc(g)} (${grouped[g].length})${isRel ? ' ★' : ''}
+      const isMapped = mapped.includes(g);
+      html += `<div style="background:${isMapped ? '#E1F5EE' : '#f5f5f5'};color:${isMapped ? '#085041' : '#333'};padding:6px 14px;font-size:11px;font-weight:600;border-top:0.5px solid #ddd">
+        ${clEsc(g)} (${grouped[g].length})${isMapped ? ' ★' : ''}
       </div>`;
       grouped[g].forEach(r => {
-        const ck = preChecked.has(r.id) ? 'checked' : '';
+        const ck = isPrechecked(r) ? 'checked' : '';
         const isAuto = (r.nature || '').toLowerCase().includes('it-dependent');
         html += `<label style="display:flex;gap:10px;padding:9px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;align-items:flex-start"
           onmouseover="this.style.background='#fafafa'" onmouseout="this.style.background=''">
@@ -257,33 +214,32 @@ function openControlLibraryPicker(auditId) {
     });
 
     if (rows.length === 0) {
-      html = '<div style="padding:40px;text-align:center;color:#999;font-size:13px">Aucun contrôle ne correspond aux critères</div>';
+      html = '<div style="padding:40px;text-align:center;color:#999;font-size:13px">Aucun contrôle disponible. Coche « Voir tous les contrôles » pour accéder à la bibliothèque complète.</div>';
     }
     document.getElementById('cl-list').innerHTML = html;
 
     const upd = () => {
       const n = document.querySelectorAll('.cl-pk:checked').length;
       const r = document.querySelectorAll('.cl-pk').length;
-      document.getElementById('cl-cnt').textContent = `${r} affichés · ${n} sélectionnés`;
+      document.getElementById('cl-cnt').textContent = `${r} affiché${r>1?'s':''} · ${n} sélectionné${n>1?'s':''}`;
     };
     upd();
     document.querySelectorAll('.cl-pk').forEach(cb => cb.addEventListener('change', upd));
   };
 
   document.getElementById('cl-kw').addEventListener('input', render);
-  document.getElementById('cl-key').addEventListener('change', render);
-  document.getElementById('cl-rel').addEventListener('change', render);
+  document.getElementById('cl-all').addEventListener('change', render);
 
-  document.getElementById('cl-all').addEventListener('click', () => {
+  document.getElementById('cl-tick').addEventListener('click', () => {
     document.querySelectorAll('.cl-pk').forEach(cb => cb.checked = true);
     const n = document.querySelectorAll('.cl-pk:checked').length;
     const r = document.querySelectorAll('.cl-pk').length;
-    document.getElementById('cl-cnt').textContent = `${r} affichés · ${n} sélectionnés`;
+    document.getElementById('cl-cnt').textContent = `${r} affiché${r>1?'s':''} · ${n} sélectionné${n>1?'s':''}`;
   });
-  document.getElementById('cl-none').addEventListener('click', () => {
+  document.getElementById('cl-untick').addEventListener('click', () => {
     document.querySelectorAll('.cl-pk').forEach(cb => cb.checked = false);
     const r = document.querySelectorAll('.cl-pk').length;
-    document.getElementById('cl-cnt').textContent = `${r} affichés · 0 sélectionnés`;
+    document.getElementById('cl-cnt').textContent = `${r} affiché${r>1?'s':''} · 0 sélectionné`;
   });
 
   document.getElementById('cl-ok').addEventListener('click', async () => {
@@ -296,7 +252,6 @@ function openControlLibraryPicker(auditId) {
     const d = AUD_DATA[auditId];
     if (!d) { if (typeof toast === 'function') toast('Données audit introuvables'); return; }
 
-    // L'étape "Tests d'audit" correspond à la clé STRING '4' (CS courant)
     const stepKey = String((typeof window.CS !== 'undefined' && window.CS !== null) ? window.CS : 4);
     if (!d.controls) d.controls = {};
     if (!d.controls[stepKey]) d.controls[stepKey] = [];
@@ -347,12 +302,7 @@ function openControlLibraryPicker(auditId) {
   render();
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-//  IMPORT EN MASSE — pour charger un CSV de contrôles dans SharePoint
-//  Usage console (admin) :
-//    const csv = await fetch('/auditflow_control_library_axway.csv').then(r => r.text());
-//    await importControlsFromCSV(csv);
-// ════════════════════════════════════════════════════════════════════════════
+// ─── IMPORT EN MASSE (admin) ───────────────────────────────────────────────
 
 async function importControlsFromCSV(csvText) {
   if (typeof createItem !== 'function') {
@@ -386,11 +336,8 @@ async function importControlsFromCSV(csvText) {
     if (fields.length !== headers.length) { errors++; continue; }
     const row = {};
     headers.forEach((h, idx) => row[h] = fields[idx]);
-
-    // SharePoint attend de vrais booléens pour 'key' et 'archived'
     if ('key' in row) row.key = (String(row.key).toLowerCase() === 'true');
     if ('archived' in row) row.archived = (String(row.archived).toLowerCase() === 'true');
-
     try {
       await createItem('AF_ControlsLibrary', row);
       imported++;
