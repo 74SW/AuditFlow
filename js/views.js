@@ -3064,14 +3064,20 @@ function showInviteModal(){
   openModal('Inviter un membre',
     '<div><label>Prénom Nom</label><input id="iv-nm" placeholder="ex : Jean Martin"/></div>'
     +'<div><label>Email</label><input id="iv-em" placeholder="jean@groupe.com"/></div>'
-    +'<div><label>Mot de passe provisoire</label><input id="iv-pw" type="password" placeholder="••••••••"/></div>'
-    +'<div><label>Rôle</label><select id="iv-rl"><option value="admin">Admin / Directeur</option><option value="auditeur" selected>Auditrice</option><option value="audite">Audité</option></select></div>',
+    +'<div><label>Rôle</label><select id="iv-rl"><option value="admin">Admin / Directeur</option><option value="auditeur" selected>Auditrice</option><option value="viewer">Viewer</option></select></div>'
+    +'<div style="font-size:11px;color:var(--text-3);padding:8px;background:var(--bg);border-radius:6px;margin-top:8px">ℹ️ L\'utilisateur se connecte avec ses identifiants Microsoft (SSO Entra ID).</div>',
     function(){
       var name=document.getElementById('iv-nm').value.trim();
       var email=document.getElementById('iv-em').value.trim();
-      var pwd=document.getElementById('iv-pw').value;
-      if(!name||!email||!pwd){toast('Champs obligatoires');return;}
-      USERS.push({id:'u'+Date.now(),name,email,pwd,role:document.getElementById('iv-rl').value,status:'actif'});
+      if(!name||!email){toast('Nom et email obligatoires');return;}
+      var role = document.getElementById('iv-rl').value;
+      var initials = name.split(' ').map(function(w){return w[0]||'';}).join('').toUpperCase().slice(0,2);
+      var newUser = {id:'usr_'+Date.now(),name,email,role,initials,status:'actif',source:'invited'};
+      USERS.push(newUser);
+      // Sauvegarder dans SharePoint
+      if (typeof saveUser === 'function') {
+        saveUser(newUser).catch(function(e){console.warn('saveUser:', e.message);});
+      }
       addHist('add',name+' invité(e)');renderUsersTbl();toast(name+' ajouté(e) ✓');
     });
 }
@@ -4348,67 +4354,18 @@ V['profil']=()=>`
         <div>
           <div style="font-size:15px;font-weight:600;">${CU?CU.name:'—'}</div>
           <div style="font-size:12px;color:var(--text-2);">${CU?CU.email:'—'}</div>
-          <div style="font-size:11px;color:var(--text-3);margin-top:2px;">${CU&&CU.role==='admin'?'Admin / Directeur':'Auditeur'}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px;">${CU&&CU.role==='admin'?'Admin / Directeur':CU&&CU.role==='viewer'?'Viewer':'Auditrice'}</div>
         </div>
       </div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:.875rem;">Changer le mot de passe</div>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <div>
-          <label class="f-lbl">Mot de passe actuel</label>
-          <input type="password" id="pw-current" class="f-inp" style="width:100%;" placeholder="••••••••"/>
-        </div>
-        <div>
-          <label class="f-lbl">Nouveau mot de passe</label>
-          <input type="password" id="pw-new" class="f-inp" style="width:100%;" placeholder="8 car. min., 1 majuscule, 1 spécial"/>
-        </div>
-        <div>
-          <label class="f-lbl">Confirmer le nouveau mot de passe</label>
-          <input type="password" id="pw-confirm" class="f-inp" style="width:100%;" placeholder="••••••••"/>
-        </div>
-        <div id="pw-error" style="display:none;font-size:12px;color:var(--red);background:var(--red-lt);padding:6px 10px;border-radius:6px;"></div>
-        <button class="bp" style="width:100%;margin-top:4px;" onclick="changePassword()">Enregistrer le nouveau mot de passe</button>
+      <div style="font-size:13px;font-weight:600;margin-bottom:.875rem;">Authentification</div>
+      <div style="font-size:12px;color:var(--text-2);line-height:1.6;padding:10px;background:var(--bg);border-radius:6px;">
+        <p style="margin:0 0 8px;">Votre compte est géré via <strong>Microsoft Entra ID (SSO)</strong>.</p>
+        <p style="margin:0 0 8px;">Pour modifier votre mot de passe, gérer votre authentification multi-facteurs ou vos appareils de confiance, utilisez le portail Microsoft.</p>
+        <a href="https://mysignins.microsoft.com/security-info" target="_blank" rel="noopener" class="bp" style="display:inline-block;margin-top:6px;text-decoration:none;font-size:12px;padding:6px 12px;">Gérer mon compte Microsoft →</a>
       </div>
     </div>
   </div>`;
 I['profil']=()=>{};
-
-async function changePassword(){
-  var current =document.getElementById('pw-current').value;
-  var newPwd   =document.getElementById('pw-new').value;
-  var confirm2 =document.getElementById('pw-confirm').value;
-  var errEl    =document.getElementById('pw-error');
-  errEl.style.display='none';
-
-  var user=USERS.find(function(u){return u.id===CU.id;});
-  if(!user||user.pwd!==current){
-    errEl.textContent='Mot de passe actuel incorrect.';
-    errEl.style.display='block';
-    return;
-  }
-  if(newPwd.length<8||!/[A-Z]/.test(newPwd)||!/[^a-zA-Z0-9]/.test(newPwd)){
-    errEl.textContent='Le nouveau mot de passe doit contenir 8 caractères min., 1 majuscule et 1 caractère spécial.';
-    errEl.style.display='block';
-    return;
-  }
-  if(newPwd!==confirm2){
-    errEl.textContent='Les mots de passe ne correspondent pas.';
-    errEl.style.display='block';
-    return;
-  }
-  // Mettre à jour en mémoire
-  user.pwd=newPwd;
-  CU.pwd=newPwd;
-  sessionStorage.setItem('af_user',JSON.stringify(CU));
-  // Mettre à jour en base
-  try {
-    var userObj=USERS.find(function(u){return u.id===CU.id;});
-    if(userObj) await saveUser(userObj);
-  } catch(e){ console.warn('pwd update:',e); }
-  toast('Mot de passe mis à jour ✓');
-  document.getElementById('pw-current').value='';
-  document.getElementById('pw-new').value='';
-  document.getElementById('pw-confirm').value='';
-}
 
 // ══════════════════════════════════════════════════════════════
 //  EXPORT PDF
