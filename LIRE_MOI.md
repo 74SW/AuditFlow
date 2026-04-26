@@ -1,117 +1,76 @@
-# AuditFlow — Guide de déploiement Supabase
+# AuditFlow — Guide de déploiement
 
-Ce guide explique comment déployer AuditFlow en utilisant **Supabase** comme base de données et stockage de fichiers, sans dépendance à SharePoint.
+Application de gestion d'audit interne, déployée sur **Azure Static Web Apps** avec authentification **Microsoft Entra ID** (SSO) et stockage des données sur **SharePoint** via **Microsoft Graph API**.
 
 ## Architecture
 
-L'application est une "Single Page Application" (SPA) statique qui communique directement avec Supabase. Elle peut être hébergée sur n'importe quel serveur web statique (Vercel, Netlify, GitHub Pages, ou même un serveur local).
+- **Frontend** : SPA HTML/CSS/JS pure, hébergée sur Azure Static Web Apps
+- **Authentification** : MSAL (Microsoft Authentication Library) avec SSO Entra ID — **aucun mot de passe stocké côté application**
+- **Données** : Listes SharePoint via Microsoft Graph API
+- **Documents** : Bibliothèque SharePoint Documents (SharePoint Drive)
 
-## Configuration de Supabase
+## Configuration
 
-1. **Créer un projet** sur [Supabase](https://app.supabase.com/).
-2. **Base de données** : Exécutez le script SQL suivant dans le "SQL Editor" pour créer les tables :
+### 1. Azure AD / Entra ID
 
-```sql
--- Table des utilisateurs
-create table af_users (
-  id text primary key,
-  email text unique,
-  name text,
-  role text,
-  initials text,
-  status text,
-  pwd text, -- NOTE: En production, utilisez Supabase Auth ou hachez les mots de passe.
-  created_at timestamp with time zone default now()
-);
+Créer une **Enterprise Application** dans le tenant cible avec :
+- Permissions Microsoft Graph délégué : `Sites.ReadWrite.All`, `User.Read`, `Files.ReadWrite.All`
+- Redirect URI : URL de l'app (`https://<votre-static-web-app>.azurestaticapps.net`)
+- Récupérer le `clientId` (Application ID) et le `tenantId`
 
--- Table du plan d'audit
-create table af_audit_plan (
-  id text primary key,
-  type text,
-  titre text,
-  annee integer,
-  statut text,
-  auditeurs jsonb,
-  domaine text,
-  process text,
-  process_id text,
-  entite text,
-  region text,
-  pays jsonb,
-  updated_at timestamp with time zone default now()
-);
+### 2. SharePoint
 
--- Table des données d'audit (tâches, contrôles, findings)
-create table af_audit_data (
-  id text primary key,
-  tasks jsonb,
-  controls jsonb,
-  findings jsonb,
-  mgt_resp jsonb,
-  docs jsonb,
-  notes text,
-  maturity jsonb,
-  updated_at timestamp with time zone default now()
-);
+Créer un site SharePoint dédié et y créer les listes suivantes (chaque liste a son schéma de colonnes — voir `js/graph.js` pour le détail) :
 
--- Table des processus
-create table af_processes (
-  id text primary key,
-  dom text,
-  proc text,
-  risk integer,
-  archived boolean default false,
-  y25 jsonb, y26 jsonb, y27 jsonb, y28 jsonb
-);
+- `AF_Users` — utilisateurs autorisés et leurs rôles
+- `AF_AuditPlan` — plan d'audit (missions Process / BU / Other)
+- `AF_AuditData` — données par audit (tâches, contrôles, WCGW, findings, notes)
+- `AF_Processes` — processus auditables avec liens vers les risques
+- `AF_RiskUniverse` — référentiel des risques (URD + opérationnels)
+- `AF_ProductLines` — lignes de produits par société
+- `AF_Structure` — structure du groupe (régions / pays / sociétés)
+- `AF_Actions` — plans d'action de suivi
+- `AF_History` — journal d'audit (logs)
+- `AF_Config` — paramètres globaux
 
--- Table des plans d'action
-create table af_actions (
-  id text primary key,
-  title text,
-  audit text,
-  resp text,
-  dept text,
-  ent text,
-  year integer,
-  quarter text,
-  status text,
-  pct integer,
-  from_finding boolean,
-  finding_title text
-);
+### 3. Configuration de l'app
 
--- Table de l'historique
-create table af_history (
-  id serial primary key,
-  type text,
-  msg text,
-  user_name text,
-  created_at timestamp with time zone default now()
-);
+Éditer `config.js` :
+
+```javascript
+const AUDITFLOW_CONFIG = {
+  clientId:    '<votre-application-id>',
+  tenantId:    '<votre-tenant-id>',
+  siteUrl:     'https://<tenant>.sharepoint.com/sites/<votre-site>',
+  appUrl:      'https://<votre-static-web-app>.azurestaticapps.net',
+};
 ```
 
-3. **Stockage (Storage)** :
-   - Créez un bucket appelé `auditflow-docs`.
-   - Rendez-le **public** (ou configurez les politiques RLS pour l'accès).
+## Authentification
 
-## Installation de l'application
+L'authentification est **entièrement gérée par Microsoft Entra ID (SSO)**.
+- Les utilisateurs se connectent avec leurs identifiants professionnels Microsoft (compte Axway/74Software)
+- Aucun mot de passe n'est stocké dans la base de l'application
+- La gestion du mot de passe (modification, MFA, appareils de confiance) se fait via le portail Microsoft : https://mysignins.microsoft.com/security-info
 
-1. **Remplir config.js** :
-   Ouvrez `config.js` et remplacez les valeurs par vos clés API Supabase (trouvées dans Settings > API) :
-   ```javascript
-   supabaseUrl: 'https://votre-projet.supabase.co',
-   supabaseKey: 'votre-anon-key',
-   ```
+## Gestion des accès
 
-2. **Hébergement** :
-   Déposez l'intégralité des fichiers sur votre service d'hébergement.
-   L'application est accessible via le fichier `index.html`.
+Les rôles disponibles sont définis dans la liste `AF_Users` :
+- **`admin`** — Admin / Directeur : accès complet, validation des étapes, gestion du Plan Audit et des utilisateurs
+- **`auditeur`** — Auditrice : accès aux audits assignés, remplissage des tâches, contrôles, findings et documents
+- **`viewer`** — Viewer : accès en lecture seule
 
-## Connexion par défaut
+Pour ajouter un utilisateur, utiliser le bouton **"+ Inviter"** dans la vue **Rôles & Accès**, ou créer manuellement une entrée dans la liste SharePoint `AF_Users` avec les champs `email`, `name`, `role`, `initials`, `status`, `source`.
 
-- **Email** : `pmassard@74software.com`
-- **Mot de passe** : `Audit1234!`
+## Déploiement
+
+Push sur la branche connectée à Azure Static Web Apps. Le déploiement est automatique via GitHub Actions.
 
 ---
-## Mode Démo
-Si Supabase n'est pas configuré, l'application utilise les données d'exemple définies dans `js/data.js`.
+
+## Sécurité
+
+- **Aucun secret cryptographique** dans le code source. Le `clientId` et `tenantId` ne sont pas des secrets (visibles publiquement par toute application MSAL).
+- **Authentification SSO Entra ID** — la révocation d'un compte au niveau de l'AD invalide automatiquement l'accès à l'app.
+- **Tokens en sessionStorage** — pas de persistance disque, scope limité au navigateur. Renouvellement automatique géré par MSAL.
+- **Permissions SharePoint** — l'accès aux listes et fichiers est filtré par les permissions du site SharePoint au niveau du groupe AD.
