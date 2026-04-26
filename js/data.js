@@ -1,8 +1,8 @@
 const MO=['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
 const STEPS=[
   {s:'Scope & Preparation',ph:1},{s:'Work Program',ph:1},{s:'Audit Kick Off',ph:1},
-  {s:'Interview / Flowcharts',ph:2},{s:'WCGW / Contrôles / Test Strategy',ph:2},{s:'Testings',ph:2},
-  {s:'Report',ph:3},{s:'Report Restitution',ph:3},{s:'Management Responses',ph:3},
+  {s:'Interview / Flowcharts',ph:2},{s:'ITW : WCGW & Contrôles',ph:2},{s:'Testings',ph:2},
+  {s:'Report (Findings + Maturity)',ph:3},{s:'Report Restitution',ph:3},{s:'Management Responses',ph:3},
   {s:'Exec. Committee Report',ph:3}
 ];
 // Étapes "clés" qui nécessitent un workflow de revue (finalisation + revue par admin)
