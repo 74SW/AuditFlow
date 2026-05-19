@@ -2067,163 +2067,240 @@ function renderBuwpList() {
     return;
   }
 
-  var h = '';
+  // v77.23 : Tableau plat (5 colonnes) groupé par process avec header pliable
+  var h = '<div class="card" style="padding:0;overflow:hidden">';
+  h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed">';
+  h += '<colgroup>';
+  h += '<col style="width:90px"/>';   // Code
+  h += '<col/>';                        // Énoncé (flex)
+  h += '<col style="width:160px"/>';   // Sample
+  h += '<col style="width:60px"/>';    // PBC count
+  h += '<col style="width:130px"/>';   // Actions
+  h += '</colgroup>';
+  h += '<thead><tr style="background:#F5F4FE">';
+  h += '<th style="padding:8px 10px;text-align:left;border-bottom:.5px solid var(--border);font-weight:600;color:var(--text-2);font-size:11px">Code</th>';
+  h += '<th style="padding:8px 10px;text-align:left;border-bottom:.5px solid var(--border);font-weight:600;color:var(--text-2);font-size:11px">Énoncé du test</th>';
+  h += '<th style="padding:8px 10px;text-align:left;border-bottom:.5px solid var(--border);font-weight:600;color:var(--text-2);font-size:11px">Sample</th>';
+  h += '<th style="padding:8px 10px;text-align:center;border-bottom:.5px solid var(--border);font-weight:600;color:var(--text-2);font-size:11px">PBC</th>';
+  h += '<th style="padding:8px 10px;text-align:right;border-bottom:.5px solid var(--border);font-weight:600;color:var(--text-2);font-size:11px"></th>';
+  h += '</tr></thead><tbody>';
+
   procs.forEach(function(p){
-    h += renderBuwpProcessCard(p, isAdmin);
+    h += renderBuwpProcessGroup(p, isAdmin);
   });
+
+  h += '</tbody></table></div></div>';
   box.innerHTML = h;
 }
 
-// ─── Carte Process ──────────────────────────────────────────────
-function renderBuwpProcessCard(p, isAdmin) {
+// ─── Groupe Process : header mauve pliable + lignes de tests si déplié ──
+function renderBuwpProcessGroup(p, isAdmin) {
   var entry = _getBuEntry(p.id);
   var tests = (entry && Array.isArray(entry.tests)) ? entry.tests : [];
   var testCount = tests.length;
   var expanded = !!_buwpExpandedProcs[p.id];
-
-  var hierarchy = (p.univers||'') + (p.univers && p.dom ? ' > ' : '') + (p.dom||'');
+  var hierarchy = (p.univers||'') + (p.univers && p.dom ? ' · ' : '') + (p.dom||'') + ((p.univers || p.dom) ? ' · ' : '') + (p.proc||'');
 
   var h = '';
-  h += '<div style="border:.5px solid var(--border);border-radius:6px;margin-bottom:6px;background:#fff;overflow:hidden">';
-
-  // Header compact (1 ligne, cliquable pour plier/déplier)
-  h += '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#fafafa;cursor:pointer" onclick="toggleBuwpProcess(\''+_escJsArg(p.id)+'\')">';
-  h += '<span style="font-size:10px;color:var(--text-3);width:10px;flex-shrink:0">'+(expanded?'▼':'▶')+'</span>';
-  h += '<div style="flex:1;min-width:0">';
-  h += '<div style="font-size:12px;font-weight:500">'+esc((''+(p.proc||'')))+'</div>';
-  if (hierarchy) h += '<div style="font-size:9px;color:var(--text-3)">'+esc(hierarchy)+'</div>';
-  h += '</div>';
-  h += '<span style="font-size:10px;color:var(--text-3);flex-shrink:0">'+testCount+(testCount>1?' tests':' test')+'</span>';
-  // Bouton "+ Ajouter un test" : à droite, dans le header (stop propagation pour ne pas plier/déplier)
+  // Header mauve cliquable (plier/déplier)
+  h += '<tr class="buwp-proc-header" style="cursor:pointer" onclick="toggleBuwpProcess(\''+_escJsArg(p.id)+'\')">';
+  h += '<td colspan="5" style="padding:7px 10px;background:#F5F4FE;color:#3C3489;font-weight:500;font-size:11px;border-bottom:.5px solid #CECBF6;border-top:.5px solid #CECBF6">';
+  h += '<span style="display:inline-block;width:12px;color:#3C3489;font-size:10px">'+(expanded?'▼':'▶')+'</span>';
+  h += esc(hierarchy);
+  h += '<span style="color:var(--text-3);font-weight:400;margin-left:8px">· '+testCount+(testCount>1?' tests':' test')+(expanded?'':' (repliés)')+'</span>';
   if (isAdmin) {
-    h += '<button class="bs" style="font-size:10px;padding:3px 8px;flex-shrink:0" onclick="event.stopPropagation();addBuTest(\''+_escJsArg(p.id)+'\')">+ Ajouter un test</button>';
+    h += '<span style="float:right" onclick="event.stopPropagation()">';
+    h += '<button class="bs" style="font-size:10px;padding:2px 8px" onclick="addBuTest(\''+_escJsArg(p.id)+'\')">+ Test</button>';
+    h += '</span>';
   }
-  h += '</div>';
-
-  // Contenu déplié
-  if (expanded) {
-    h += '<div style="border-top:.5px solid #f0f0f0">';
-    if (!testCount) {
-      h += '<div style="font-size:11px;color:var(--text-3);font-style:italic;padding:10px;text-align:center">Aucun test pour ce process. Cliquez sur « + Ajouter un test » dans l\'en-tête.</div>';
-    } else {
-      h += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
-      tests.forEach(function(t){
-        h += renderBuwpTestRow(p.id, t, isAdmin);
-      });
-      h += '</table>';
-    }
-    h += '</div>';
-  }
-
-  h += '</div>';
-  return h;
-}
-
-// ─── Ligne compacte d'un test (table) + détail inline si déplié ──
-function renderBuwpTestRow(auditProcessId, t, isAdmin) {
-  var expanded = !!_buwpExpandedTests[t.id];
-
-  // Énoncé tronqué pour la ligne compacte
-  var statement = esc((t.statement || '(sans énoncé)'));
-  var maxLen = 110;
-  var truncated = statement.length > maxLen ? statement.slice(0, maxLen-1)+'…' : statement;
-
-  var h = '';
-  h += '<tr style="border-top:.5px solid #f0f0f0;cursor:pointer" onclick="toggleBuwpTest(\''+_escJsArg(t.id)+'\')">';
-  h += '<td style="padding:6px 8px;width:90px;vertical-align:middle;white-space:nowrap">';
-  h += '<span style="font-size:9px;color:var(--text-3);margin-right:4px">'+(expanded?'▼':'▶')+'</span>';
-  h += '<span style="background:var(--purple);color:#fff;font-size:9px;padding:2px 6px;border-radius:3px;font-family:monospace;letter-spacing:.4px">'+esc((t.code||''))+'</span>';
-  h += '</td>';
-  h += '<td style="padding:6px 8px;vertical-align:middle">'+truncated+'</td>';
-  h += '<td style="padding:6px 8px;width:60px;vertical-align:middle;text-align:right" onclick="event.stopPropagation()">';
-  h += '<button class="bs" style="font-size:9px;padding:2px 6px" onclick="toggleBuwpTest(\''+_escJsArg(t.id)+'\')">'+(expanded?'Replier':'Détail')+'</button>';
   h += '</td>';
   h += '</tr>';
 
-  // Si déplié : ligne supplémentaire avec le détail éditable inline
+  // Lignes de tests si déplié
   if (expanded) {
-    h += '<tr style="background:#fafafa">';
-    h += '<td colspan="3" style="padding:0">';
-    h += renderBuwpTestDetail(auditProcessId, t, isAdmin);
-    h += '</td></tr>';
+    if (!testCount) {
+      h += '<tr><td colspan="5" style="padding:10px;font-size:11px;color:var(--text-3);font-style:italic;text-align:center">Aucun test pour ce process. Cliquez sur « + Test » dans l\'en-tête.</td></tr>';
+    } else {
+      tests.forEach(function(t){
+        h += renderBuwpTestRow(p.id, t, isAdmin);
+      });
+    }
   }
   return h;
 }
 
-// ─── Détail éditable inline d'un test (référentiel BU) ──────────
-function renderBuwpTestDetail(auditProcessId, t, isAdmin) {
-  if (!Array.isArray(t.pbc)) t.pbc = [];
+// ─── Ligne d'un test (5 colonnes) ───────────────────────────────
+function renderBuwpTestRow(auditProcessId, t, isAdmin) {
+  var statement = (t.statement || '(sans énoncé)');
+  var pbcCount = Array.isArray(t.pbc) ? t.pbc.length : 0;
 
   var h = '';
-  h += '<div style="padding:10px 14px;border-top:.5px dashed #e0e0e0;background:#fafafa">';
+  h += '<tr style="border-bottom:.5px solid #f0f0f0">';
+  h += '<td style="padding:7px 10px;vertical-align:middle;white-space:nowrap">';
+  h += '<span style="background:var(--purple);color:#fff;font-size:9px;padding:2px 6px;border-radius:3px;font-family:monospace;letter-spacing:.4px">'+esc((t.code||''))+'</span>';
+  h += '</td>';
+  h += '<td style="padding:7px 10px;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escAttr(statement)+'">'+esc(statement)+'</td>';
+  h += '<td style="padding:7px 10px;vertical-align:middle;color:var(--text-2);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escAttr(t.samplingHint||'—')+'">'+esc(t.samplingHint||'—')+'</td>';
+  h += '<td style="padding:7px 10px;vertical-align:middle;text-align:center">';
+  h += '<span style="background:var(--bg);color:var(--text-2);font-size:10px;padding:2px 7px;border-radius:3px">'+pbcCount+'</span>';
+  h += '</td>';
+  h += '<td style="padding:7px 10px;vertical-align:middle;text-align:right;white-space:nowrap">';
+  h += '<button class="bs" style="font-size:10px;padding:3px 8px" onclick="showBuwpTestModal(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\')">Détail</button>';
+  if (isAdmin) {
+    h += '<button class="bd" style="font-size:10px;padding:3px 6px;margin-left:3px" onclick="removeBuTest(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\')" title="Supprimer ce test">×</button>';
+  }
+  h += '</td>';
+  h += '</tr>';
+  return h;
+}
+
+// ─── v77.23 : Modale d'édition d'un test BU ───────────────────
+function showBuwpTestModal(auditProcessId, testId) {
+  var p = (PROCESSES||[]).find(function(x){return x.id===auditProcessId;});
+  var entry = _getBuEntry(auditProcessId);
+  if (!p || !entry) { toast('Process introuvable'); return; }
+  var t = (entry.tests||[]).find(function(x){return x.id===testId;});
+  if (!t) { toast('Test introuvable'); return; }
+  if (!Array.isArray(t.pbc)) t.pbc = [];
+  var isAdmin = CU && CU.role==='admin';
+
+  var hierarchy = (p.univers||'') + (p.univers && p.dom ? ' · ' : '') + (p.dom||'') + ((p.univers || p.dom) ? ' · ' : '') + (p.proc||'');
+
+  var body = '';
+  body += '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px;padding-bottom:10px;border-bottom:.5px solid var(--border)"><span style="background:var(--purple);color:#fff;font-size:10px;padding:2px 7px;border-radius:3px;font-family:monospace;margin-right:8px">'+esc(t.code||'')+'</span>'+esc(hierarchy)+'</div>';
 
   // Énoncé
-  h += '<label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">Énoncé du test</label>';
+  body += '<div style="margin-bottom:12px">';
+  body += '<label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px">Énoncé du test</label>';
   if (isAdmin) {
-    h += '<textarea onchange="setBuTestField(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\',\'statement\',this.value)" style="width:100%;min-height:38px;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;resize:vertical;font-family:inherit;box-sizing:border-box;margin-bottom:5px">'+esc((''+(t.statement||'')))+'</textarea>';
+    body += '<textarea id="buwp-modal-statement" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 9px;border:.5px solid var(--border);border-radius:4px;font-family:inherit;resize:vertical;min-height:38px">'+esc(t.statement||'')+'</textarea>';
   } else {
-    h += '<div style="font-size:11px;padding:5px 8px;background:#fff;border-radius:3px;margin-bottom:5px">'+esc((''+(t.statement||'—')))+'</div>';
+    body += '<div style="font-size:12px;padding:6px 10px;background:var(--bg);border-radius:4px">'+esc(t.statement||'—')+'</div>';
   }
+  body += '</div>';
 
-  // Objectif (zone large, style assurance)
-  h += '<label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">Objectif (assurance / contrôle interne)</label>';
+  // Objectif
+  body += '<div style="margin-bottom:12px">';
+  body += '<label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px">Objectif (assurance / contrôle interne)</label>';
   if (isAdmin) {
-    h += '<textarea onchange="setBuTestField(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\',\'objective\',this.value)" style="width:100%;min-height:38px;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;resize:vertical;font-family:inherit;box-sizing:border-box;margin-bottom:5px" placeholder="ex : S\'assurer que...">'+esc((''+(t.objective||'')))+'</textarea>';
+    body += '<textarea id="buwp-modal-objective" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 9px;border:.5px solid var(--border);border-radius:4px;font-family:inherit;resize:vertical;min-height:50px" placeholder="ex : S\'assurer que...">'+esc(t.objective||'')+'</textarea>';
   } else {
-    h += '<div style="font-size:11px;padding:5px 8px;background:#fff;border-radius:3px;margin-bottom:5px">'+esc((''+(t.objective||'—')))+'</div>';
+    body += '<div style="font-size:12px;padding:6px 10px;background:var(--bg);border-radius:4px">'+esc(t.objective||'—')+'</div>';
   }
+  body += '</div>';
 
-  // Assertions COSO (zone large, format puces, monospace pour bien aligner)
-  h += '<label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">Assertions COSO testées</label>';
+  // Assertions COSO
+  body += '<div style="margin-bottom:12px">';
+  body += '<label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px">Assertions COSO testées</label>';
   if (isAdmin) {
-    h += '<textarea onchange="setBuTestField(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\',\'assertions\',this.value)" style="width:100%;min-height:60px;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.5;box-sizing:border-box;margin-bottom:1px" placeholder="• Complétude (...)\n• Existence (...)\n• Exactitude (...)">'+esc((''+(t.assertions||'')))+'</textarea>';
-    h += '<div style="font-size:9px;color:var(--text-3);font-style:italic;margin-bottom:7px">Une assertion par ligne, précédée d\'une puce « • »</div>';
+    body += '<textarea id="buwp-modal-assertions" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 9px;border:.5px solid var(--border);border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.5;resize:vertical;min-height:60px" placeholder="• Complétude (...)\n• Existence (...)\n• Exactitude (...)">'+esc(t.assertions||'')+'</textarea>';
+    body += '<div style="font-size:9px;color:var(--text-3);font-style:italic;margin-top:3px">Une assertion par ligne, précédée d\'une puce « • »</div>';
   } else {
-    h += '<div style="font-size:11px;padding:5px 8px;background:#fff;border-radius:3px;margin-bottom:7px;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.5">'+esc((''+(t.assertions||'—')))+'</div>';
+    body += '<div style="font-size:12px;padding:6px 10px;background:var(--bg);border-radius:4px;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.5">'+esc(t.assertions||'—')+'</div>';
   }
+  body += '</div>';
 
-  // Sampling hint
-  h += '<label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">Méthode / sample (orientation pour la sélection)</label>';
+  // Sample
+  body += '<div style="margin-bottom:12px">';
+  body += '<label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px">Méthode / sample</label>';
   if (isAdmin) {
-    h += '<input value="'+_escAttr(t.samplingHint)+'" placeholder="ex : 25 transactions sur les 12 derniers mois" onchange="setBuTestField(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\',\'samplingHint\',this.value)" style="width:100%;font-size:11px;padding:4px 7px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;margin-bottom:7px"/>';
+    body += '<input id="buwp-modal-sampling" value="'+_escAttr(t.samplingHint||'')+'" placeholder="ex : 25 transactions sur les 12 derniers mois" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 9px;border:.5px solid var(--border);border-radius:4px;font-family:inherit"/>';
   } else {
-    h += '<div style="font-size:11px;padding:4px 7px;margin-bottom:7px">'+esc((''+(t.samplingHint||'—')))+'</div>';
+    body += '<div style="font-size:12px;padding:6px 10px;background:var(--bg);border-radius:4px">'+esc(t.samplingHint||'—')+'</div>';
   }
+  body += '</div>';
 
-  // PBC (sans statut, juste nom + suppression)
-  h += '<div style="border-top:.5px dashed var(--border);padding-top:7px;margin-top:3px">';
-  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
-  h += '<span style="font-size:10px;font-weight:600;color:var(--text-2)">PBC · '+t.pbc.length+' document'+(t.pbc.length>1?'s':'')+'</span>';
+  // PBC
+  body += '<div style="margin-bottom:8px">';
+  body += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
+  body += '<label style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.3px">PBC · '+t.pbc.length+' document'+(t.pbc.length>1?'s':'')+'</label>';
   if (isAdmin) {
-    h += '<button class="bs" style="font-size:10px;padding:2px 7px" onclick="addBuPbcDoc(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\')">+ Document</button>';
+    body += '<button class="bs" style="font-size:10px;padding:2px 8px" onclick="_buwpModalAddPbc(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(testId)+'\')">+ Document</button>';
   }
-  h += '</div>';
+  body += '</div>';
+  body += '<div id="buwp-modal-pbc-list" style="border:.5px solid var(--border);border-radius:4px;padding:6px 8px;min-height:30px">';
   if (!t.pbc.length) {
-    h += '<div style="font-size:10px;color:var(--text-3);font-style:italic;padding:4px 0">Aucun document.</div>';
+    body += '<div style="font-size:10px;color:var(--text-3);font-style:italic;padding:3px 0">Aucun document.</div>';
   } else {
     t.pbc.forEach(function(doc){
-      h += '<div style="display:flex;align-items:center;gap:5px;padding:3px 0">';
-      h += '<span style="font-size:11px;color:var(--text-3)">📄</span>';
-      if (isAdmin) {
-        h += '<input value="'+_escAttr(doc.name)+'" placeholder="ex : Journal des ventes" onchange="setBuPbcDoc(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\',\''+_escJsArg(doc.id)+'\',this.value)" style="flex:1;font-size:11px;padding:3px 7px;border:1px solid var(--border);border-radius:3px"/>';
-        h += '<button onclick="removeBuPbcDoc(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\',\''+_escJsArg(doc.id)+'\')" title="Supprimer" style="background:#fff;border:.5px solid var(--border);color:var(--text-3);border-radius:3px;width:20px;height:20px;cursor:pointer;font-size:12px;padding:0;line-height:1">×</button>';
-      } else {
-        h += '<span style="font-size:11px;flex:1">'+esc((''+(doc.name||'')))+'</span>';
-      }
-      h += '</div>';
+      body += _buwpModalPbcRow(auditProcessId, testId, doc, isAdmin);
     });
   }
-  h += '</div>';
+  body += '</div>';
+  body += '</div>';
 
-  // Bouton supprimer le test (en bas)
+  // Note bas modale
   if (isAdmin) {
-    h += '<div style="text-align:right;margin-top:8px">';
-    h += '<button class="bd" style="font-size:9px;padding:2px 7px" onclick="removeBuTest(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(t.id)+'\')">Supprimer ce test</button>';
-    h += '</div>';
+    body += '<div style="font-size:10px;color:var(--text-3);font-style:italic;margin-top:8px">Cliquez sur « Enregistrer » pour valider les modifications.</div>';
   }
 
+  // Ouvrir la modale (xwide pour avoir assez de place)
+  openModal('Détail du test — '+(t.code||''), body, async function(){
+    // Au save : récupérer les valeurs et appliquer via setBuTestField
+    if (!isAdmin) return;
+    var entry2 = _getBuEntry(auditProcessId);
+    if (!entry2) return;
+    var t2 = (entry2.tests||[]).find(function(x){return x.id===testId;});
+    if (!t2) return;
+    var stmtEl = document.getElementById('buwp-modal-statement');
+    var objEl  = document.getElementById('buwp-modal-objective');
+    var assEl  = document.getElementById('buwp-modal-assertions');
+    var smpEl  = document.getElementById('buwp-modal-sampling');
+    if (stmtEl) t2.statement   = stmtEl.value;
+    if (objEl)  t2.objective   = objEl.value;
+    if (assEl)  t2.assertions  = assEl.value;
+    if (smpEl)  t2.samplingHint = smpEl.value;
+    try {
+      if (typeof saveBuProcessFull === 'function') await saveBuProcessFull(entry2);
+      toast('✓ Test enregistré');
+    } catch(e) {
+      toast('Erreur sauvegarde : '+e.message);
+    }
+    renderBuwpList();
+  }, {wide: true, cancelLabel: 'Annuler'});
+}
+
+// Rendu d'une ligne PBC dans la modale (input + bouton ×)
+function _buwpModalPbcRow(auditProcessId, testId, doc, isAdmin) {
+  var h = '<div class="buwp-modal-pbc-row" data-pbc-id="'+_escAttr(doc.id)+'" style="display:flex;align-items:center;gap:6px;padding:3px 0">';
+  h += '<span style="font-size:11px;color:var(--text-3)">📄</span>';
+  if (isAdmin) {
+    h += '<input value="'+_escAttr(doc.name||'')+'" placeholder="ex : Journal des ventes" onchange="setBuPbcDoc(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(testId)+'\',\''+_escJsArg(doc.id)+'\',this.value)" style="flex:1;font-size:11px;padding:4px 7px;border:.5px solid var(--border);border-radius:3px"/>';
+    h += '<button onclick="_buwpModalRemovePbc(\''+_escJsArg(auditProcessId)+'\',\''+_escJsArg(testId)+'\',\''+_escJsArg(doc.id)+'\')" title="Supprimer" style="background:#fff;border:.5px solid var(--border);color:var(--text-3);border-radius:3px;width:22px;height:22px;cursor:pointer;font-size:12px;padding:0;line-height:1">×</button>';
+  } else {
+    h += '<span style="font-size:11px;flex:1">'+esc(doc.name||'')+'</span>';
+  }
   h += '</div>';
   return h;
+}
+
+// Ajouter un PBC depuis la modale (rechargement de la liste dans la modale)
+async function _buwpModalAddPbc(auditProcessId, testId) {
+  await addBuPbcDoc(auditProcessId, testId);
+  _buwpModalRefreshPbcList(auditProcessId, testId);
+}
+
+// Supprimer un PBC depuis la modale
+async function _buwpModalRemovePbc(auditProcessId, testId, pbcId) {
+  await removeBuPbcDoc(auditProcessId, testId, pbcId);
+  _buwpModalRefreshPbcList(auditProcessId, testId);
+}
+
+// Recharger la liste PBC dans la modale (sans tout fermer)
+function _buwpModalRefreshPbcList(auditProcessId, testId) {
+  var entry = _getBuEntry(auditProcessId);
+  if (!entry) return;
+  var t = (entry.tests||[]).find(function(x){return x.id===testId;});
+  if (!t) return;
+  if (!Array.isArray(t.pbc)) t.pbc = [];
+  var isAdmin = CU && CU.role==='admin';
+  var listEl = document.getElementById('buwp-modal-pbc-list');
+  if (!listEl) return;
+  if (!t.pbc.length) {
+    listEl.innerHTML = '<div style="font-size:10px;color:var(--text-3);font-style:italic;padding:3px 0">Aucun document.</div>';
+  } else {
+    listEl.innerHTML = t.pbc.map(function(doc){return _buwpModalPbcRow(auditProcessId, testId, doc, isAdmin);}).join('');
+  }
 }
 async function _ensureBuEntry(auditProcessId) {
   if (!Array.isArray(BU_PROCESSES)) BU_PROCESSES = [];
